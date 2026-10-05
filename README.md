@@ -94,38 +94,13 @@ server 都能用，自检不过就不交付。
 
 > **代价**：单文件程序每次启动会把自己解压到 `/tmp`（通常 3–10 秒）。
 > 如果目标机把 `/tmp` 挂成了 `noexec`，或者你更在意启动速度，
-> 就改用下面的 AppImage 方式。
+> 可以改用 `--onedir` 自行打包，或调整 `/tmp` 的挂载选项。
 
 > `--auto-scrcpy` 编译出来的东西全在 **`项目/vendor/`**（scrcpy + 必要时自编的 SDL3），
 > 不写系统目录、不需要管理员权限，**删掉 `vendor` 即卸载**；第二次构建直接复用。
 > `vendor/` 已在 `.gitignore` 里。
 
 首次启动若检测到 USB 权限不足，会弹窗提供**一键修复**（输入一次系统密码）。
-
-### 方式 A-2：Linux AppImage（可选）
-
-要一个压缩过的单文件、且目标机有 FUSE 时用这个（AppImage 挂载运行，启动更快）：
-
-```bash
-./build-appimage.sh --auto-scrcpy --clean
-chmod +x dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
-./dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
-```
-
-**关于 FUSE**：AppImage 直接运行需要系统的 `libfuse.so.2`。缺失时会在程序启动**之前**
-就报错退出（`dlopen(): error loading libfuse.so.2`），界面根本弹不出来 —— 这种
-情况程序没法自我提醒，所以构建脚本会额外在 `dist/` 生成一份 **`FUSE说明.txt`**，
-方便随 AppImage 一起发给最终用户。
-
-| 系统 | 安装命令 |
-|---|---|
-| Ubuntu 24.04+ / Debian 13+ | `sudo apt install -y libfuse2t64` |
-| Ubuntu 22.04 / Debian 12 及以下 | `sudo apt install -y libfuse2` |
-| Fedora / RHEL / Rocky | `sudo dnf install -y fuse-libs` |
-| Arch / Manjaro | `sudo pacman -S fuse2` |
-
-不装也行（无需管理员权限）：`./scrcpy-gui-zh-*.AppImage --appimage-extract-and-run`，
-代价是每次启动多花 1–3 秒解压。不想要那份 txt 就在构建时加 `--no-readme`。
 
 ### 方式 B：Windows exe
 
@@ -201,7 +176,7 @@ sudo apt install -y android-sdk-platform-tools-common
 
 装完 **拔插一次数据线**，并 **注销重新登录**（组权限需要重新登录才生效）。
 
-> 这一步是操作系统的安全策略，打包进 AppImage 也替代不了。
+> 这一步是操作系统的安全策略，把程序打包起来也替代不了。
 > **每台电脑一次，不是每次连接、也不是每台手机。**
 
 ## 项目结构
@@ -212,14 +187,12 @@ scrcpy-gui-zh/
 ├── install-udev.sh         Linux USB 权限安装（一次性，需 root）
 ├── build-common.sh         发行版适配层（apt / dnf / pacman / zypper / apk）
 ├── build-linux.sh          Linux 单个可执行文件构建（x86_64 / arm64 / armhf）
-├── build-all.sh            批量构建矩阵（多发行版 × 多架构，一次跑完）
-├── build-in-docker.sh      在 Docker 容器里构建（指定发行版，扩大兼容面）
+├── build-docker.sh         在 Docker 里构建（单发行版或全矩阵）
 ├── verify-release.py       发布前验收（架构是否与文件名一致、包里组件是否齐全）
-├── build-appimage.sh       Linux AppImage 构建（可选）
 ├── build-windows.ps1       Windows exe 构建（需 UTF-8 BOM）
 ├── build-windows.cmd       Windows 构建入口（自动补 BOM，推荐用这个）
 ├── assets/
-│   ├── scrcpy-gui-zh.png   AppImage / Linux 图标
+│   ├── scrcpy-gui-zh.png   程序图标（Linux / Windows）
 │   └── scrcpy-gui-zh.ico   Windows 图标
 ├── vendor/                 Windows 构建脚本自动下载的 scrcpy（不入库）
 ├── docs/
@@ -236,8 +209,8 @@ scrcpy-gui-zh/
 | 文档 | 内容 |
 |---|---|
 | [docs/USAGE.md](docs/USAGE.md) | 四种连接方式详解、参数逐项说明、快捷键、录屏、多设备 |
-| [docs/BUILD.md](docs/BUILD.md) | 三种构建方式、AppImage 打包原理、跨架构构建、从源码编译 scrcpy |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | USB 权限、mDNS 全空、卡在配对、Android 14+、SDL3、glibc、FUSE 等 |
+| [docs/BUILD.md](docs/BUILD.md) | 三种构建方式、单文件打包原理、跨架构构建、从源码编译 scrcpy |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | USB 权限、mDNS 全空、卡在配对、Android 14+、SDL3、glibc 等 |
 | [docs/RELEASE.md](docs/RELEASE.md) | 发布流程：打 tag 自动构建上传、手动发布、资产命名规范、检查清单 |
 
 ## 已知限制
@@ -252,9 +225,9 @@ scrcpy-gui-zh/
 - **蓝牙**不支持（ADB 协议不存在蓝牙传输层）
 - **产物名带 glibc 下限**（如 `linux-glibc2.35-x86_64`）：glibc 只能向后兼容，
   在 Ubuntu 22.04（2.35）构建的产物**跑不了 Debian 11（2.31）**。想兼容更老的系统用
-  `./build-in-docker.sh`（默认 `debian:11` 构建 → 兼容 Debian 11+ / Ubuntu 20.04+ / RHEL 9）
-- **AppImage 不能跨架构**：x86_64 与 arm64 要各打一次
-- **AppImage 不打包** glibc、显卡驱动、X11/Wayland——这些必须用宿主机的
+  `./build-docker.sh`（默认 `debian:11` 构建 → 兼容 Debian 11+ / Ubuntu 20.04+ / RHEL 9）
+- **不能跨架构**：x86_64 / arm64 / armhf 必须各自构建一次
+- **不打包** glibc、显卡驱动、X11/Wayland——这些必须用宿主机的
 - **USB 权限** 必须在每台 Linux 机器上装一次 udev 规则
 
 ## 许可

@@ -39,7 +39,7 @@ Linux 默认不允许普通用户读写 `/dev/bus/usb/...` 节点：
 crw-rw-r-- 1 root root 189, 3  /dev/bus/usb/001/004
 ```
 
-adb 打不开这个节点。**这是操作系统安全策略，打包进 AppImage 也替代不了。**
+adb 打不开这个节点。**这是操作系统安全策略，把程序打包起来也替代不了。**
 
 ### 解决
 
@@ -303,97 +303,13 @@ scrcpy 也没有 `--bluetooth` 之类的选项。
 
 ## 5. Linux 打包 / 运行问题
 
-### 5.0 构建第 7 步失败：`This doesn't look like a squashfs image`
-
-```
-==> 7/9 生成 AppImage
-[信息] 下载 appimagetool（x86_64）…
-[注意] appimagetool 无法直接运行（多半缺 FUSE），改用解压模式
-Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome...
-This doesn't look like a squashfs image.
-Failed to open squashfs image
-Failed to extract AppImage
-```
-
-这是 **appimagetool 本身的问题**，不是你的配置问题。appimagetool 是一个「打包在
-AppImage 里的 Qt 程序」，要先自解压再运行，再去找它内嵌的 runtime —— 任何一环
-出问题都会以这几行报错收场。
-
-**现在的脚本已经不依赖它了**：第 7 步改成用
-
-```bash
-mksquashfs AppDir out.squashfs -root-owned -noappend -comp gzip
-cat runtime-x86_64 out.squashfs > out.AppImage
-```
-
-手工组装（`runtime` 是一个约 1MB 的普通 ELF，不是 AppImage）。这条路径**不需要
-Qt、不需要 FUSE、也不需要 AppImage 套 AppImage**。appimagetool 只在手工路径
-不可用时才作为备选，并且下载后会校验文件是不是真的 ELF。
-
-手工路径的两个前提，脚本会自动处理：
-
-| 前提 | 处理方式 |
-|---|---|
-| `mksquashfs` | 自动 `apt install squashfs-tools` |
-| AppImage runtime | 自动从 `AppImage/type2-runtime` 或 `AppImageKit` 下载并校验 ELF 头 |
-
-如果两条路径都失败，脚本会把「第 8 步解包自检」的失败当作硬错误直接终止，
-不会交付一个坏产物。
-
-**自查下载是否被破坏**：
-
-```bash
-ls -l build-appimage/runtime-x86_64
-file build-appimage/runtime-x86_64          # 必须是 ELF，不能是 HTML/文本
-head -c 64 build-appimage/runtime-x86_64 | od -c | head -3
-```
-
-若 `file` 显示的是文本/HTML，说明代理或网络把下载内容换掉了，换网络或关掉代理重试。
-
-### 5.1 AppImage 报 FUSE 错误
-
-```
-dlopen(): error loading libfuse.so.2
-
-AppImages require FUSE to run.
-```
-
-**为什么程序自己不会提示**：这个错误由 AppImage 的运行时（在 Python 代码之前）
-抛出并直接退出，界面来不及弹出。所以提醒只能放在两个地方：
-
-1. **`dist/FUSE说明.txt`** —— 构建脚本自动生成的纯文本，随 AppImage 一起分发
-2. **程序内部**（能跑起来时）—— 启动会检测 `libfuse.so.2`，缺失时弹窗给出安装命令
-
-按发行版安装：
-
-| 系统 | 命令 |
-|---|---|
-| Ubuntu 24.04+ / Debian 13+ | `sudo apt install -y libfuse2t64` |
-| Ubuntu 22.04 / Debian 12 及以下 | `sudo apt install -y libfuse2` |
-| Fedora / RHEL / Rocky | `sudo dnf install -y fuse-libs` |
-| Arch / Manjaro | `sudo pacman -S fuse2` |
-| openSUSE | `sudo zypper install -y libfuse2` |
-
-**不想装（或没有管理员权限）**，改用免 FUSE 的运行方式：
-
-```bash
-./xxx.AppImage --appimage-extract-and-run
-# 或
-APPIMAGE_EXTRACT_AND_RUN=1 ./xxx.AppImage
-```
-
-代价是每次启动多花 1–3 秒解压到临时目录。功能完全一样。
-
-> 注意 `--appimage-extract-and-run` 与 `--appimage-extract` 不同：前者解压后**直接运行**，
-> 后者只解压出 `squashfs-root/` 目录然后退出。
-
-### 5.2 报 `GLIBC_2.xx not found`
+### 5.1 报 `GLIBC_2.xx not found`
 
 产物是在比目标机更新的系统上构建的。**glibc 只能向后兼容。**
 
 解法：在目标发行版（或更老的）里重新构建，或用对应版本的 docker 镜像构建。
 
-### 5.3 报 `error while loading shared libraries: libXXX.so`
+### 5.2 报 `error while loading shared libraries: libXXX.so`
 
 打包时 `ldd` 没收集到该库，或它在排除名单里。
 
@@ -401,7 +317,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./xxx.AppImage
 2. 从构建机的 `/usr/lib` 里把对应 `.so` 复制进 `AppDir/usr/lib`
 3. 或者把它从构建脚本的 `EXCLUDE_RE` 里删掉后重新构建
 
-### 5.4 `Could not find a usable init.tcl`
+### 5.3 `Could not find a usable init.tcl`
 
 PyInstaller 没把 Tcl/Tk 数据目录打进去。
 
@@ -409,27 +325,27 @@ PyInstaller 没把 Tcl/Tk 数据目录打进去。
 # 确认构建机装了 python3-tk
 sudo apt install -y python3-tk
 # 彻底清理后重建
-rm -rf build-appimage dist && ./build-appimage.sh --clean
+rm -rf build-linux dist && ./build-linux.sh --clean
 ```
 
-仍不行时，在 `build-appimage.sh` 第 4 步的 PyInstaller 命令里加：
+仍不行时，在 `build-linux.sh` 第 4 步的 PyInstaller 命令里加：
 
 ```bash
 --add-data "$(python3 -c 'import tkinter,os;print(os.path.dirname(tkinter.__file__))'):tkinter"
 ```
 
-### 5.5 界面能弹但 adb 找不到设备
+### 5.4 界面能弹但 adb 找不到设备
 
-AppImage 运行后，`PATH` 与 `LD_LIBRARY_PATH` 由 `AppRun` 设置。检查：
+单文件产物运行时会把自己解压到 `/tmp/_MEIxxxx`，并由程序里的 `child_env()` 设置
+`PATH`、`LD_LIBRARY_PATH`、`SCRCPY_SERVER_PATH`。检查：
 
 ```bash
-./xxx.AppImage --appimage-extract
-cat squashfs-root/AppRun          # 确认 @APP_ID@ / @MULTIARCH@ 都被替换了
+./你的产物 --selftest      # 会打印解压目录与各组件的实际路径
 ```
 
-若 `AppRun` 里还有 `@...@` 占位符，说明构建脚本第 6 步的 `sed` 没生效。
+若显示组件「缺」，说明打包时没带进去，重新构建即可。
 
-### 5.6 界面中文显示成方框
+### 5.5 界面中文显示成方框
 
 缺中文字体：
 

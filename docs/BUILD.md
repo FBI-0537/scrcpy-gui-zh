@@ -12,7 +12,6 @@
 | 源码直接运行 | 无 | 任意有 Python 3 + tkinter | ✅ 需要 scrcpy / adb | 天然跨 |
 | Windows exe | `build-windows.ps1` | Windows | ❌（可选连 scrcpy 一起带） | 不涉及 |
 | **Linux 单个可执行文件** | `build-linux.sh` | Linux（x86_64 / aarch64） | ❌ 全内置，**不需要 FUSE** | **必须各打一次** |
-| Linux AppImage | `build-appimage.sh` | Linux（x86_64 / aarch64） | ❌ 全内置，需要 FUSE | **必须各打一次** |
 
 **硬约束（先看清再动手）**
 
@@ -73,7 +72,7 @@
 
 | 依赖 | 是否必需 | 说明 |
 |---|---|---|
-| Python 3.8+ / Tkinter | 源码与构建需要；AppImage/exe 已内置 | Linux：`python3-tk` |
+| Python 3.8+ / Tkinter | 源码与构建需要；单文件产物/exe 已内置 | Linux：`python3-tk` |
 | scrcpy | ✅ | 真正干活的程序 |
 | adb | ✅ | scrcpy 依赖它；Windows 的 scrcpy-win64 包自带 |
 | segno（或 qrcode） | 可选 | 只有二维码配对需要，纯 Python 无编译依赖 |
@@ -189,7 +188,6 @@ http://deb.debian.org/debian/pool/main/s/scrcpy/
 
 ```
 scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64            # 单个可执行文件
-scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage   # AppImage
 ```
 
 构建结束会直接给出兼容性结论：
@@ -204,7 +202,7 @@ scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage   # AppImage
 [注意] 用不了的系统（会报 GLIBC_2.35 not found）：
     ❌ Debian 11 / Ubuntu 20.04（glibc 2.31）
     ❌ RHEL 9 / Rocky 9 / AlmaLinux 9（glibc 2.34）
-[信息] 想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-in-docker.sh
+[信息] 想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-docker.sh
 ```
 
 **release 该怎么命名**：
@@ -219,11 +217,10 @@ scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage   # AppImage
 **用 Docker 在指定发行版里构建**（最省事，不用第二台机器）：
 
 ```bash
-./build-in-docker.sh --list                  # 看可选镜像与各自的兼容范围
-./build-in-docker.sh                         # 默认 debian:11（兼容面最广）
-./build-in-docker.sh --distro debian:12
-./build-in-docker.sh --auto-scrcpy --clean   # 其余参数原样传给 build-linux.sh
-./build-in-docker.sh --appimage --distro debian:11
+./build-docker.sh --list                  # 看可选镜像与各自的兼容范围
+./build-docker.sh                         # 默认 debian:11（兼容面最广）
+./build-docker.sh --distro debian:12
+./build-docker.sh --auto-scrcpy --clean   # 其余参数原样传给 build-linux.sh
 ```
 
 容器里以 root 构建（构建脚本需要 apt 装依赖），结束后会自动把 `dist/`、
@@ -242,15 +239,14 @@ docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
 > （`libGL/libEGL/libdrm/libgbm/libvulkan` 用宿主机的），所以**无桌面环境的
 > 服务器上跑不起来**。
 
-### 2.6 一次构建多架构 / 多发行版：`build-all.sh`
+### 2.6 一次构建多架构 / 多发行版：`build-docker.sh`
 
 ```bash
-./build-all.sh                     # 默认矩阵：x86_64 / arm64 / armhf
-./build-all.sh --list              # 只看计划，不构建
-./build-all.sh --arch arm64        # 只做一个架构（x86_64 | arm64 | armhf）
-./build-all.sh --distros all       # 每个架构覆盖全部 glibc 档位（更慢更全）
-./build-all.sh --appimage          # 额外产出 AppImage
-./build-all.sh --skip-emulated     # 跳过需要 QEMU 模拟的架构
+./build-docker.sh                     # 默认矩阵：x86_64 / arm64 / armhf
+./build-docker.sh --list              # 只看计划，不构建
+./build-docker.sh --arch arm64        # 只做一个架构（x86_64 | arm64 | armhf）
+./build-docker.sh --distros all       # 每个架构覆盖全部 glibc 档位（更慢更全）
+./build-docker.sh --skip-emulated     # 跳过需要 QEMU 模拟的架构
 ```
 
 **默认矩阵**（产物都是单个可执行文件）：
@@ -274,7 +270,7 @@ docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
 1. **无线配对在 ARM 上大概率不可用**：Google 官方的 platform-tools **只有 x86_64 版**。
    脚本会改成从 Debian/Ubuntu 归档取本架构的 `adb`，但这些包通常低于 platform-tools 30，
    所以 `adb pair` / `adb mdns`（方式二 / 方式三）用不了。**USB 直连与方式一（USB 转无线）正常。**
-   因此 `build-all.sh` 对非 x86_64 目标会自动加 `--allow-old-adb`。
+   因此 `build-docker.sh` 对非 x86_64 目标会自动加 `--allow-old-adb`。
 2. **32 位 ARM（armhf）风险较高**：PyInstaller 可能没有该架构的预编译 bootloader，
    需要容器里有 `gcc` 与 `zlib1g-dev` 现场编译；QEMU 模拟下也很慢。
 
@@ -307,7 +303,7 @@ python scrcpy-gui-zh.py
 
 - Windows：`PATH` → exe 同目录 → `C:\scrcpy` → `C:\platform-tools` →
   `%LOCALAPPDATA%\Android\Sdk\platform-tools` → `%USERPROFILE%\Downloads\scrcpy` 等
-- Linux：`PATH` → `/usr/bin` → `/usr/local/bin` → `/snap/bin` → AppImage 包内
+- Linux：`PATH` → `/usr/bin` → `/usr/local/bin` → `/snap/bin` → 产物解压目录内
 
 ---
 
@@ -407,21 +403,9 @@ python -m PyInstaller --noconsole --onefile --clean `
 
 ---
 
-## 5. 方式三：Linux 产物（单个可执行文件 / AppImage）
+## 5. 方式三：Linux 单个可执行文件
 
-Linux 侧有两种产物，**默认推荐单个可执行文件**：
-
-| 产物 | 脚本 | 命令 | 特点 |
-|---|---|---|---|
-| **单个可执行文件** | `build-linux.sh` | `./build-linux.sh --clean` | 一个 ELF 文件，**不需要 FUSE**；每次启动解压到 `/tmp`（3–10 秒） |
-| AppImage | `build-appimage.sh` | `./build-appimage.sh --clean` | 一个 `.AppImage`，压缩过、挂载运行；**需要 FUSE**（或加 `--appimage-extract-and-run`） |
-
-两者的 `scrcpy` 获取方式完全一样（系统里的 / 项目 `vendor/scrcpy/` /
-`--auto-scrcpy` 自动编译）。
-
-### 5.0 单个可执行文件（`build-linux.sh`，推荐）
-
-用 PyInstaller `--onefile` 打包，内容与 AppImage 完全一致：
+用 PyInstaller `--onefile` 打成**一个可执行文件**，里面装齐：
 
 ```
 Python 解释器 + Tcl/Tk + 界面程序 + segno
@@ -429,7 +413,20 @@ Python 解释器 + Tcl/Tk + 界面程序 + segno
 + scrcpy-server + install-udev.sh
 ```
 
-关键实现：
+目标机器 `chmod +x` 直接跑，**不需要额外装任何东西**（首次使用要装一次 udev 规则，
+程序会自动引导），也**不需要 FUSE**。
+
+### 5.1 一键脚本
+
+```bash
+./build-linux.sh --yes --clean                 # 缺依赖自动装
+./build-linux.sh --auto-scrcpy --yes --clean   # 连 scrcpy 都自动获取（下载优先，编译兜底）
+./build-linux.sh --no-auto-download --clean    # 不联网下载，只用系统里已有的
+./build-linux.sh --no-install --clean          # 只检查依赖，不改系统
+./build-linux.sh --allow-old-adb --clean       # 接受旧 adb（牺牲无线配对功能）
+```
+
+### 5.2 关键实现
 
 | 项目 | 做法 |
 |---|---|
@@ -437,219 +434,45 @@ Python 解释器 + Tcl/Tk + 界面程序 + segno
 | 依赖 `.so` | 先 `ldd` 收集到 `build-linux/libs/`，再逐个 `--add-binary` |
 | scrcpy-server | `--add-data <server>:share/scrcpy` → 程序自动设 `SCRCPY_SERVER_PATH` |
 | udev 脚本 | `--add-data <install-udev.sh>:.` |
-| 运行时环境 | 程序内的 `child_env()` 把 `_MEIPASS` 加进 `PATH` / `LD_LIBRARY_PATH`，并设好 `SCRCPY_SERVER_PATH` |
+| 运行时环境 | 程序内 `child_env()` 把 `_MEIPASS` 加进 `PATH` / `LD_LIBRARY_PATH`，并设好 `SCRCPY_SERVER_PATH` |
 | **端到端自检** | 打包后执行 `./dist/xxx --selftest`，逐项确认组件存在，并**真的运行 `scrcpy --version`** 验证依赖库可用；不通过就终止 |
 
-```bash
-./build-linux.sh --yes --clean                    # 缺依赖自动装
-./build-linux.sh --auto-scrcpy --yes --clean      # 连 scrcpy 都自动编译
-./build-linux.sh --auto-scrcpy --scrcpy-version 4.1
-./build-linux.sh --no-install --clean             # 只检查依赖，不改系统
-./build-linux.sh --appimage                       # 转去调用 build-appimage.sh
-```
+### 5.3 构建脚本的步骤
 
-产物：`dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64`（约 150–250 MB，未压缩）。
-
-**两个注意事项**：
-
-1. **每次启动会解压到 `/tmp`**，体积越大越慢（3–10 秒）。若目标机把 `/tmp`
-   挂载为 `noexec`，单文件方式无法运行，请改用 AppImage。
-2. **glibc 下限依旧**：产物只能在 glibc ≥ 构建机的系统上跑。
-
-### 5.1 AppImage：一键脚本
-
-```bash
-chmod +x build-appimage.sh install-udev.sh
-./build-appimage.sh --clean
-```
-
-**依赖会自动处理**：脚本先检查系统依赖（python3、python3-tk、python3-venv、
-ldd、curl、file、scrcpy、adb），缺什么就列出来并**询问是否用 apt 自动安装**。
-Python 侧的 PyInstaller 与 segno 则会自动装进脚本自建的虚拟环境，不污染系统。
-
-| 参数 | 作用 |
-|---|---|
-| （无） | 缺依赖时列出清单并询问 `[Y/n]` |
-| `--yes` / `-y` | 缺依赖直接自动安装，不询问（适合 CI / docker） |
-| `--no-install` | 只做检查，缺依赖就报错退出，绝不改动系统 |
-| **`--auto-scrcpy`** | **系统 scrcpy 不可用时，自动源码编译到项目 `vendor/scrcpy/`** |
-| **`--scrcpy-version <版本>`** | 自动编译时指定版本，如 `4.1`；默认取最新 |
-| `--no-readme` | 不在 `dist/` 生成 `FUSE说明.txt` |
-| `--clean` | 先删 `build-appimage/` 和 `dist/` 再构建 |
-| `--help` | 显示脚本头部说明 |
-
-### 5.1.1 `--auto-scrcpy`：Linux 上自动准备 scrcpy
-
-Linux 没有 scrcpy 的官方预编译二进制（只有源码），而发行版源里的版本通常太旧、
-snap 版又因链接 snap 私有 glibc 无法打包。`--auto-scrcpy` 把这一整套自动化：
-
-```
-1. 系统 scrcpy 可用（版本 ≥ 2.2 且非 snap）→ 直接用，跳过下面全部
-2. 项目 vendor/scrcpy/ 里已有编译好的      → 直接复用，不重复编译
-3. 否则自动：
-   a. 逐个安装编译依赖（meson ninja pkg-config cmake gcc g++ 
-      libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libusb-1.0-0-dev）
-   b. 若 pkg-config 找不到 sdl3 → 先试 libsdl3-dev；
-      仍不行就下载 SDL3 源码编译到 vendor/sdl3（老发行版走这条，最耗时）
-   c. 下载 scrcpy-server-vX.Y 与 scrcpy vX.Y 源码
-   d. meson setup --prefix=vendor/scrcpy -Dprebuilt_server=... → ninja → ninja install
-```
-
-结果全在 **`项目/vendor/`**：不写系统目录、不需要管理员权限、删 `vendor` 即卸载。
-`vendor/` 已在 `.gitignore` 里。
-
-```bash
-./build-appimage.sh --auto-scrcpy --clean                    # 最新版
-./build-appimage.sh --auto-scrcpy --scrcpy-version 4.1       # 指定版本
-./build-appimage.sh --auto-scrcpy --yes --clean              # 依赖也免询问自动装
-SCRCPY_VERSION=4.1 ./build-appimage.sh --auto-scrcpy         # 也可以用环境变量
-```
-
-> 首次约 **10–20 分钟**，主要花在编译 SDL3。第二次构建只要 `vendor/scrcpy/`
-> 还在就直接复用（想强制重编就删掉该目录）。
-
-安装用的命令是 `sudo apt-get install -y <包>`；若直接安装失败（软件源过期），
-会自动补一次 `apt-get update` 再重试。非 root 且无 sudo、或非交互环境下
-（没有 TTY）不会擅自安装，只会打印手动命令。
-
-> ⚠️ 自动安装的 `scrcpy` 来自发行版源，**老发行版（Ubuntu 22.04/24.04）
-> 版本太旧，无法投屏 Android 14+**。脚本会在版本闸门处警告。
-> 这种情况请按第 7 节源码编译，然后用 `SCRCPY_BIN=` 指定。
-
-**关于 FUSE：构建不需要它，但脚本一开始就会报告宿主状态。**
-
-AppImage 只有在「运行」时才需要 `libfuse.so.2`——`appimagetool` 缺 FUSE 会
-自动降级为 `--appimage-extract-and-run`，解包自检用的是 `--appimage-extract`，
-两者都不依赖 FUSE。所以脚本第 1 步只把宿主 FUSE 状态**报出来**，不阻塞构建：
-
-```
-[信息] FUSE：已安装（本机可直接运行 AppImage 产物）
-```
-
-缺了就是这段：
-
-```
-[注意] FUSE：未安装（找不到 libfuse.so.2）
-[注意]   · 不影响构建，只影响「直接运行」AppImage 产物
-[注意]   · 目标机器同样需要它，否则运行时报：
-[注意]       dlopen(): error loading libfuse.so.2
-[注意]   · 本机若也是目标机，安装命令（本机发行版对应包名）：
-[注意]       sudo apt install -y libfuse2t64
-[询问] 构建不需要 FUSE，但装上后本机可直接运行产物。现在安装 libfuse2t64 吗？[y/N]
-```
-
-按 `y` 就顺手装上（包名由 `/etc/os-release` 自动判断）；`--yes` 时直接装；
-`--no-install` 时只报告。构建结束时也会再汇总一次宿主 FUSE 状态。
-
-> 为什么不把它当必装依赖：**需要 FUSE 的是目标机器，不一定是构建机**。
-> 把产物发给 20 台别人的机器时，构建机装没装毫无影响；塞进依赖清单只会
-> 让 `--yes` 去装一个构建用不到的东西。
-
-产物：`dist/scrcpy-gui-zh-1.0.0-linux-glibc<版本>-<x86_64|aarch64>.AppImage`
-
-可用环境变量覆盖自动探测：
-
-```bash
-SCRCPY_BIN=/usr/local/bin/scrcpy \
-ADB_BIN=/usr/bin/adb \
-SCRCPY_SERVER=/path/to/scrcpy-server-v4.1 \
-./build-appimage.sh
-```
-
-### 5.2 脚本的 9 个步骤
-
-| 步骤 | 做什么 | 失败时的典型原因 |
+| 步骤 | 做什么 | 可能失败于 |
 |---|---|---|
-| 1 | 架构/glibc 检测、依赖检查与自动安装、**宿主 FUSE 状态报告**（只报告，不阻塞） | 缺 `python3-tk` / `python3-venv` |
-| 2 | **获取** scrcpy / adb / scrcpy-server；不可用时按需自动编译（`--auto-scrcpy`） | scrcpy 缺失、版本 < 2.2、snap 版、找不到 server |
-| 3 | 准备 AppDir 目录 | 权限 |
-| 4 | venv 里装 PyInstaller + segno，`--onedir` 打包界面 | 网络（pip 走代理失败） |
-| 5 | 复制 scrcpy / adb / server / udev 脚本，`ldd` 收集 `.so` | 依赖库收集不全（见 5.4） |
-| 6 | 写 `AppRun`、`.desktop`、图标 | — |
-| 7 | 生成 AppImage：**首选「runtime + mksquashfs」手工组装**，appimagetool 为备选 | 下载文件被网络/代理破坏；缺 `mksquashfs` |
-| 8 | **解包自检**（不需要 FUSE） | 列出缺失项 |
-| 9 | 输出产物与使用说明 | — |
-
-### 5.3 AppImage 内部结构
-
-```
-AppDir/
-├── AppRun                      ← 入口脚本（关键）
-├── scrcpy-gui-zh.desktop
-├── scrcpy-gui-zh.png / .DirIcon
-└── usr/
-    ├── bin/
-    │   ├── scrcpy-gui-zh/      ← PyInstaller onedir 产物（含 _internal）
-    │   ├── scrcpy              ← 从构建机复制
-    │   └── adb
-    ├── lib/                    ← ldd 收集来的 .so
-    └── share/
-        ├── scrcpy/scrcpy-server
-        └── scrcpy-gui-zh/install-udev.sh
-```
-
-`AppRun` 做的三件事：
-
-```sh
-export PATH="$HERE/usr/bin:$PATH"                      # 让 which 找到包内 scrcpy/adb
-export LD_LIBRARY_PATH="$HERE/usr/lib:..."             # 让 scrcpy/adb 找到包内 .so
-export SCRCPY_SERVER_PATH="$HERE/usr/share/scrcpy/scrcpy-server"
-                                                       # 否则 scrcpy 会去找编译期固定路径
-```
-
-> **`SCRCPY_SERVER_PATH` 这一步不能省**：发行版版 scrcpy 把 server 路径编译死在
-> `/usr/share/scrcpy/` 里，换了位置就找不到。
+| 1 | 发行版/架构/glibc 检测；依赖与**版本**检查并自动安装；建 venv、升级 PyInstaller | 缺 `python3-tk` / `python3-venv`；PyInstaller < 6 |
+| 2 | 获取 scrcpy / adb / scrcpy-server（**优先下载**，其次 `--auto-scrcpy` 编译） | 网络；ARM 上没有官方 platform-tools |
+| 3 | `ldd` 收集依赖库（排除 glibc 与显卡驱动栈） | 依赖缺失 |
+| 4 | PyInstaller `--onefile` 打包 | 磁盘空间不足 |
+| 5 | 端到端自检（实际运行产物） | 组件没打进去 |
+| 6 | 输出产物 + glibc 兼容性结论 | — |
 
 ### 5.4 依赖库收集与排除
 
-`ldd <二进制>` 逐个抓取，但**必须排除两类**：
+**必须用宿主机的，不打包**：`ld-linux`、`libc`、`libpthread`、`libdl`、`libm`、
+`librt`、`libresolv`、`libnss_*`，以及显卡驱动栈 `libGL` / `libEGL` / `libGLX` /
+`libgbm` / `libdrm` / `libvulkan`。
 
-| 排除 | 原因 |
-|---|---|
-| `libc.so.*`、`libpthread`、`libdl`、`libm`、`librt`、`libnss_*`、`ld-linux*` | glibc 必须与宿主内核/发行版匹配，带了反而崩 |
-| `libGL*`、`libEGL*`、`libGLX*`、`libdrm*`、`libgbm*`、`libvulkan*` | 显卡驱动栈，必须用宿主机的 |
-
-规则在脚本顶部的 `EXCLUDE_RE` 里。**如果目标机运行时报缺库**
-（`error while loading shared libraries: libXXX.so`），把那行删掉重新构建即可。
+打包进去的是 scrcpy/adb 各自的依赖：SDL3、FFmpeg（`libavcodec` / `libavformat` /
+`libavutil` / `libswresample`）、`libusb-1.0` 等。
 
 ### 5.5 目标机运行
 
 ```bash
-chmod +x scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
-./scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
+chmod +x scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64
+./scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64
 ```
 
-- 首次启动会检测 USB 权限，弹窗一键修复（`pkexec` 提权）
-- 也可以 `--appimage-extract` 解压后手动运行 `squashfs-root/AppRun`
+两个注意点：
 
-**FUSE 是唯一的系统前提**：
+1. **每次启动会把自己解压到 `/tmp`**（3–10 秒）。若目标机的 `/tmp` 挂载为
+   `noexec`，单文件方式无法运行；可以改用 `--onedir` 自行打包，或调整 `/tmp` 挂载选项。
+2. **glibc 下限**：产物只能在 glibc ≥ 构建机的系统上跑（见 2.5）。
 
-| 系统 | 命令 |
-|---|---|
-| Ubuntu 24.04+ / Debian 13+ | `sudo apt install -y libfuse2t64` |
-| Ubuntu 22.04 / Debian 12 及以下 | `sudo apt install -y libfuse2` |
-| Fedora / RHEL / Rocky | `sudo dnf install -y fuse-libs` |
-| Arch / Manjaro | `sudo pacman -S fuse2` |
+> **AppImage 支持已移除**：从 v1.0.0 起只产出单个可执行文件。
+> 确实需要 AppImage 的话，从 git 历史里取 `build-appimage.sh`。
 
-没有 FUSE 时，AppImage 的运行时会在**我们的代码执行之前**报
-`dlopen(): error loading libfuse.so.2` 并退出，所以**程序自己无法提醒用户**。
-处理办法：
-
-1. 构建脚本会在 `dist/` 里生成 **`FUSE说明.txt`**，内容包含全部安装命令与
-   免 FUSE 的运行方式，随 AppImage 一起分发即可。不需要就加 `--no-readme`。
-2. 程序内部也会检测（通过 `ctypes` 加载 `libfuse.so.2`），若发现是在 AppImage 里
-   运行却缺 FUSE，会弹窗给出安装指引 —— 这种情况说明用户用的是
-   `--appimage-extract-and-run`。
-3. 构建结束时终端也会打印同样的一份提示。
-
-免 FUSE 的运行方式（无需管理员权限）：
-
-```bash
-./xxx.AppImage --appimage-extract-and-run
-APPIMAGE_EXTRACT_AND_RUN=1 ./xxx.AppImage
-```
-
----
 
 ## 6. 跨架构构建（重点）
 
@@ -660,7 +483,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./xxx.AppImage
 
 ```bash
 sudo apt install -y python3 python3-venv python3-tk adb curl file
-./build-appimage.sh --clean
+./build-linux.sh --clean
 ```
 
 ### 6.2 在 x86_64 上用 Docker + QEMU 模拟构建
@@ -673,7 +496,7 @@ docker run --privileged --rm tonistiigi/binfmt --install arm64
 docker run --rm --platform linux/arm64 \
   -v "$PWD:/w" -w /w ubuntu:22.04 \
   bash -c "apt update && apt install -y sudo python3 python3-venv python3-tk \
-           adb curl file && ./build-appimage.sh --clean"
+           adb curl file && ./build-linux.sh --clean"
 ```
 
 ⚠️ 容器里 apt 的 scrcpy 版本很旧（22.04 是 1.21），会被版本闸门拦下。
@@ -755,16 +578,11 @@ meson --version        # 确认是新版
 构建完成后逐项确认：
 
 ```bash
-# AppImage
-ls -lh dist/*.AppImage
-file dist/*.AppImage                       # 确认架构
-./dist/*.AppImage --appimage-extract       # 不用 FUSE 也能解包
-ls squashfs-root/usr/bin/{scrcpy,adb}
-ls squashfs-root/usr/share/scrcpy/scrcpy-server
-ls squashfs-root/usr/share/scrcpy-gui-zh/install-udev.sh
-ls squashfs-root/usr/lib | head            # 依赖库应该有若干
-cat squashfs-root/AppRun                   # 确认路径替换成功
-rm -rf squashfs-root
+# Linux 单个可执行文件
+ls -lh dist/scrcpy-gui-zh-*                        # 体积应在 150-250MB
+file dist/scrcpy-gui-zh-*                          # 确认架构与 glibc 下限
+./dist/scrcpy-gui-zh-* --selftest                  # 会列出各组件实际路径
+python3 verify-release.py dist/                     # 架构 vs 文件名、组件是否齐全
 ```
 
 ```powershell
@@ -773,7 +591,8 @@ Get-Item dist\scrcpy-gui-zh.exe | Select-Object Name, Length
 .\dist\scrcpy-gui-zh.exe                   # 能弹窗口即成功
 ```
 
-构建脚本第 8 步已经自动做了 AppImage 的解包自检，可直接看它的 `[OK]/[缺]` 输出。
+构建脚本第 5 步已经自动跑了 `--selftest`（实际执行产物、真的运行
+`scrcpy --version`），可直接看它的 `[OK]/[缺]` 输出。
 
 ---
 

@@ -64,6 +64,17 @@
   支持 Windows/macOS 的 `<MouseWheel>` 与 Linux 的 `<Button-4/5>`；
   最小窗口尺寸从 780×640 放宽到 720×480
 
+### 精简
+- **移除 AppImage 支持，容器构建脚本合并为一个**。产物统一为「单个可执行文件」，
+  AppImage 这条路已无实际用途，删掉以免维护两份打包逻辑：
+  - 删除 `build-appimage.sh`（1017 行）、`build-in-docker.sh`、`build-all.sh`
+  - 新增 `build-docker.sh`：一个脚本同时覆盖「单发行版」与「全矩阵」两种用法
+    （`--distro` / `--arch` / `--distros all` / `--skip-emulated` / `--list`）
+  - 构建相关代码约 3700 行 → 约 2600 行
+  - 文档同步：README 去掉「方式 A-2」小节与 FUSE 说明，docs/BUILD.md 第 5 节
+    整节重写为单文件产物，TROUBLESHOOTING 第 5 节删掉 FUSE/squashfs 两小节并重新编号
+  - 需要 AppImage 的话可从 git 历史里取回 `build-appimage.sh`
+
 ### 构建
 - **新增 `verify-release.py`：发布前验收脚本**（纯 Python，Windows/Linux 都能跑）。
   发布前拿它扫一遍产物：

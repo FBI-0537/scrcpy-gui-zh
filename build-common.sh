@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  发行版适配层 —— 供 build-linux.sh / build-appimage.sh 共用
+#  发行版适配层 —— 供 build-linux.sh / build-docker.sh 共用
 # ----------------------------------------------------------------------------
 #  用 source 引入：
 #      source "$SCRIPT_DIR/build-common.sh"
@@ -14,8 +14,6 @@
 #      pkg_install  <包名...>   安装实际包名
 #      pkg_is_installed <包名>  是否已安装
 #      pkg_files    <包名>      列出该包安装的文件
-#      host_fuse_present        本机有没有 libfuse.so.2
-#      host_fuse_pkg            本机 FUSE 的包名
 #      libc_flavor              glibc 还是 musl
 #
 #  支持的家族与包管理器：
@@ -411,27 +409,7 @@ pkg_files() {
     esac
 }
 
-# ---------------------------------------------------------------------------
-# FUSE / AppImage 相关
-# ---------------------------------------------------------------------------
-host_fuse_present() {
-    if command -v ldconfig >/dev/null 2>&1 \
-       && ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
-        return 0
-    fi
-    local p
-    for p in /lib/*/libfuse.so.2 /usr/lib/*/libfuse.so.2 \
-             /lib64/libfuse.so.2 /usr/lib64/libfuse.so.2 /usr/lib/libfuse.so.2; do
-        if [ -e "$p" ]; then
-            return 0
-        fi
-    done
-    return 1
-}
 
-host_fuse_pkg() {
-    pkg_hint fuse
-}
 
 # ---------------------------------------------------------------------------
 # 版本比较与最低版本要求

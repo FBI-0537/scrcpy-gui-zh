@@ -8,17 +8,15 @@
 #      + scrcpy-server + install-udev.sh
 #
 #  目标机器 **不需要安装任何东西**，chmod +x 后直接运行。
-#  与 AppImage 的区别：
-#      · 不需要 FUSE，双击/命令行都能直接跑
+#  特点：
+#      · 不需要 FUSE，chmod +x 后命令行/双击都能直接跑
 #      · 每次启动会把自己解压到临时目录（软件越大越慢，通常 3-10 秒）
-#      · 想要 AppImage 格式就用 build-appimage.sh（或本脚本加 --appimage）
 #
 #  用法：
 #      ./build-linux.sh                    # 缺依赖会询问是否自动安装
 #      ./build-linux.sh --yes --clean
 #      ./build-linux.sh --auto-scrcpy       # 系统 scrcpy 不可用时自动源码编译
 #      ./build-linux.sh --auto-scrcpy --scrcpy-version 4.1
-#      ./build-linux.sh --appimage          # 转而调用 build-appimage.sh
 #      ./build-linux.sh --help
 #
 #  重要：ELF 不能跨架构。x86_64 与 arm64 要各在对应机器上构建一次。
@@ -84,10 +82,6 @@ while [ "$#" -gt 0 ]; do
         --no-auto-adb) AUTO_ADB=0; shift ;;
         --no-auto-download) AUTO_DOWNLOAD=0; shift ;;
         --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
-        --appimage)
-            shift
-            info "改用 build-appimage.sh 生成 AppImage…"
-            exec "$SCRIPT_DIR/build-appimage.sh" "$@" ;;
         --scrcpy-version)
             [ "$#" -ge 2 ] || die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
             SCRCPY_VERSION="$2"; shift 2 ;;
@@ -97,7 +91,7 @@ while [ "$#" -gt 0 ]; do
             exit 0 ;;
         *) die "未知参数：$arg
      可用：--clean / --yes / --no-install / --auto-scrcpy
-           --scrcpy-version <版本> / --appimage / --help" ;;
+           --scrcpy-version <版本> / --help" ;;
     esac
 done
 
@@ -174,7 +168,7 @@ find_first() {
     return 1
 }
 
-# 从源码编译 scrcpy 到项目 vendor/scrcpy（与 build-appimage.sh 保持一致）
+# 从源码编译 scrcpy 到项目 vendor/scrcpy
 build_scrcpy_from_source() {
     local ver="$SCRCPY_VERSION" tarball src server_url sdlver sdlurl
 
@@ -835,7 +829,7 @@ INCOMPAT_LINES="$(glibc_incompat_lines "$GLIBC_VER")"
 if [ -n "$INCOMPAT_LINES" ]; then
     warn "用不了的系统（会报 GLIBC_$GLIBC_VER not found）："
     printf '%s\n' "$INCOMPAT_LINES"
-    info "想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-in-docker.sh"
+    info "想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-docker.sh"
 fi
 
 cat <<TIP
@@ -856,8 +850,6 @@ cat <<TIP
 
   注意：
     · 每次启动会把自己解压到 /tmp，软件越大越慢（通常 3-10 秒），属正常
-    · 部分系统 /tmp 挂载了 noexec 会导致无法运行，这时改用 AppImage 版本
-    · 想要 AppImage 格式： ./build-appimage.sh
 
   arm64 版本请在 arm64 环境里重新跑一遍本脚本，ELF 不能跨架构。
 ────────────────────────────────────────────────────────────

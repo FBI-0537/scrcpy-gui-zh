@@ -35,8 +35,8 @@ git push origin v1.0.0
 `Actions → Release → Run workflow` 填个版本号即可；或者在本地：
 
 ```bash
-./build-all.sh --list      # 看构建计划
-./build-all.sh             # 本地构建（需要 Docker）
+./build-docker.sh --list      # 看构建计划
+./build-docker.sh             # 本地构建（需要 Docker）
 python3 verify-release.py dist/
 ```
 
@@ -48,7 +48,7 @@ python3 verify-release.py dist/
 
 ```bash
 # 1) 本地构建（需要 Docker；ARM 走 QEMU 较慢）
-./build-all.sh
+./build-docker.sh
 
 # 2) 验收
 python3 verify-release.py dist/

@@ -1,7 +1,6 @@
 # Python 构建产物
 __pycache__/
 *.py[cod]
-build-appimage/
 build-linux/
 build/
 dist/
