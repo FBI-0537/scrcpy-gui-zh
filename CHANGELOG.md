@@ -1,4 +1,16 @@
 ### 修复
+- **定位到总根源：宿主机的 DNS 被代理软件 fake-IP 接管，容器解析出 198.18.x.x 假 IP**
+  （实测容器内 `getent hosts mirrors.tuna.tsinghua.edu.cn` → `198.18.0.15`，
+  `registry-1.docker.io` → `198.18.0.21`；容器里没有任何 proxy 环境变量，
+  说明劫持发生在网络层）。表现就是：访问域名卡死（curl 挂 9 分钟）、
+  apt 报一堆 404、镜像拉取超时。
+  · 新增 `-Dns <服务器>`：把 `--dns` 传给每次 `docker run`，
+    容器直接问公共 DNS，不继承宿主被劫持的解析：
+        .\build-windows-docker.cmd -SkipEmulated -Dns 223.5.5.5 -AptMirror https://mirrors.tuna.tsinghua.edu.cn
+  · 启动时自动检测：容器解析结果落在 198.18.0.0/15 就打印警告与两种修法
+    （Docker Engine 里加 `dns: [...]` 永久解决，或本次加 `-Dns`）
+
+### 修复
 - **架构检测不能用 `uname -m`**：QEMU 用户态模拟下它返回**宿主内核**的架构 ——
   实测在 `--platform linux/arm64` 的容器里报 `armv7l`，导致构建脚本直接
   「不支持的架构」退出。现在优先用 `dpkg --print-architecture`（镜像构建时定死，

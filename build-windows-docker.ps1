@@ -57,10 +57,17 @@ param(
     [string]$Family = '',
     [string]$Registry = '',
     [string]$AptMirror = '',
+    [string]$Dns = '',
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
 )
+
+# 给容器指定 DNS：宿主机的 DNS 被代理软件接管时（fake-IP），容器会解析出
+# 198.18.x.x 这类假 IP，于是访问任何域名都卡死或 404。
+#   -Dns 223.5.5.5   让容器直接问公共 DNS，不继承宿主那套被劫持的解析
+$DnsArgs = @()
+if ($Dns) { $DnsArgs = @('--dns', $Dns) }
 
 # 镜像源前缀：连不上 Docker Hub 时用它，例如
 #     .\build-windows-docker.cmd -Registry docker.m.daocloud.io
@@ -232,6 +239,25 @@ if (-not (Ensure-Image $Targets[0].Image)) {
 }
 
 Say ""
+Say "==> 检查容器内的 DNS 解析" Cyan
+$dnsRaw = (& docker run --rm @DnsArgs $ProbeImage sh -c 'getent hosts deb.debian.org 2>/dev/null || echo NO_GETENT' 2>&1 | Out-String)
+if ($dnsRaw -match '198\.18\.') {
+    Say "  [警告] 容器解析出的 IP 落在 198.18.0.0/15 —— 这是代理软件 fake-IP 的保留段。" Yellow
+    Say "  宿主机的 DNS 被代理接管了，容器拿着假 IP 出去，表现就是卡死 / 404 / 拉取超时。" Yellow
+    Say "  两种修法（任选，推荐第一个一次性解决）：" Yellow
+    Say "    · 永久：Docker Desktop → Settings → Docker Engine 里加一行，然后 Apply & Restart" Gray
+    Say '        "dns": ["223.5.5.5", "119.29.29.29"]' Gray
+    Say "    · 临时：跑本脚本时加 -Dns 223.5.5.5（只影响本次构建）" Gray
+}
+elseif ($dnsRaw -match 'NO_GETENT') {
+    Say "  （容器里没有 getent，跳过 DNS 检查）" DarkGray
+}
+else {
+    $first = @($dnsRaw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+    Say "  [OK] $first" DarkGray
+}
+
+Say ""
 Say "==> 检查挂载是否正常" Cyan
 
 function Test-MountOnce {
@@ -246,10 +272,10 @@ function Test-MountOnce {
 }
 
 $MountStyle = 'v'      # 'v' = -v "path:/src"，'mount' = --mount type=bind,...
-$probe = Test-MountOnce -Image $ProbeImage -RunArgs @('-v', "${Proj}:/src")
+$probe = Test-MountOnce -Image $ProbeImage -RunArgs ($DnsArgs + @('-v', "${Proj}:/src"))
 if (-not $probe.Ok) {
     Say "  -v 挂载没通过，改用 --mount 写法再试一次…" Yellow
-    $probe = Test-MountOnce -Image $ProbeImage -RunArgs @('--mount', "type=bind,source=${Proj},target=/src")
+    $probe = Test-MountOnce -Image $ProbeImage -RunArgs ($DnsArgs + @('--mount', "type=bind,source=${Proj},target=/src"))
     if ($probe.Ok) { $MountStyle = 'mount' }
 }
 if (-not $probe.Ok) {
@@ -302,7 +328,7 @@ foreach ($t in $Targets) {
     # 注意：**不能用 uname -m** —— QEMU 用户态模拟下它常常返回宿主内核的架构
     # （实测在 --platform linux/arm64 的容器里报 armv7l 甚至 x86_64）。
     # dpkg 记录的架构（dpkg --print-architecture）是镜像构建时定死的，最可靠。
-    $carch = (& docker run --rm --platform $t.Plat $img sh -c 'dpkg --print-architecture 2>/dev/null || uname -m' 2>&1 | Out-String).Trim()
+    $carch = (& docker run --rm @DnsArgs --platform $t.Plat $img sh -c 'dpkg --print-architecture 2>/dev/null || uname -m' 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $carch) {
         Say "  [失败] 容器起不来：$carch" Red
         Say "  ARM 架构需要 QEMU 模拟。Docker Desktop 默认自带；" Yellow
@@ -336,7 +362,7 @@ foreach ($t in $Targets) {
         Say "  （该家族需要源码编译 scrcpy，已自动加 --auto-scrcpy，会更慢）" DarkGray
     }
 
-    $runArgs = @('run', '--rm', '--platform', $t.Plat)
+    $runArgs = @('run', '--rm') + $DnsArgs + @('--platform', $t.Plat)
     if ($MountStyle -eq 'mount') {
         $runArgs += @('--mount', "type=bind,source=${Proj},target=/src")
     }
