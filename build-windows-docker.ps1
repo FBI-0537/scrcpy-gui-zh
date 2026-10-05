@@ -55,10 +55,46 @@ param(
     [string]$Arch = '',
     [ValidateSet('', 'debian', 'rhel', 'arch', 'suse')]
     [string]$Family = '',
+    [string]$Registry = '',
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
 )
+
+# 镜像源前缀：连不上 Docker Hub 时用它，例如
+#     .\build-windows-docker.cmd -Registry docker.m.daocloud.io
+# 会把 debian:12 变成 docker.m.daocloud.io/debian:12
+function Resolve-Image([string]$img) {
+    if ($Registry) { return "$Registry/$img" }
+    return $img
+}
+
+function Say-ImageTrouble {
+    Say "  这不是路径或挂载问题，是**连不上镜像仓库**（Docker Hub 国内经常不通）。三种解法：" Yellow
+    Say "    1) 给 Docker Desktop 配代理（你系统里有 127.0.0.1:7890 代理，推荐这个）" Yellow
+    Say "       Settings → Resources → Proxies → Manual proxy configuration" Gray
+    Say "       http://127.0.0.1:7890      ← 记得先启动代理程序" Gray
+    Say "    2) 换国内镜像源：Settings → Docker Engine 里加一行" Yellow
+    Say '         "registry-mirrors": ["https://docker.m.daocloud.io"]' Gray
+    Say "       然后 Apply & Restart" Gray
+    Say "    3) 不改任何设置，直接用镜像源前缀跑本脚本：" Yellow
+    Say "         .\build-windows-docker.cmd -Registry docker.m.daocloud.io" Gray
+}
+
+# 确保镜像在本地：已在本地就跳过，没有就拉取；拉取失败给出网络/镜像源指引
+function Ensure-Image([string]$img) {
+    $resolved = Resolve-Image $img
+    & docker image inspect $resolved *> $null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    Say "  拉取镜像 $resolved …" DarkGray
+    $raw = (& docker pull $resolved 2>&1 | Out-String)
+    if ($LASTEXITCODE -eq 0) { return $true }
+    Say "  [失败] 拉取镜像失败：$resolved" Red
+    @($raw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) |
+        ForEach-Object { Say "      $_" DarkGray }
+    Say-ImageTrouble
+    return $false
+}
 
 # 注意：不能用 'Stop' —— docker 会把进度写到 stderr，PowerShell 5.1 会把它
 # 当成错误直接终止脚本。所有失败都通过 $LASTEXITCODE 显式判断。
@@ -182,21 +218,25 @@ if (-not (Test-Path "$Proj\build-linux.sh")) { throw "找不到 $Proj\build-linu
 New-Item -ItemType Directory -Force -Path "$Proj\dist" | Out-Null
 
 # ---------------------------------------------------------------------------
-# 挂载自检
-# 坑：docker 会把「正在拉镜像 / 拉取进度」写到 stderr，用 2>&1 捕获后会和 stdout
-# 混在一起；而且 PowerShell 可能把多行输出当成一个字符串，所以解析数字很脆。
-# 这里改成：① 先显式拉镜像，② 用「哨兵字符串」判断挂载是否成功，
-# ③ 失败时把 docker 的原始输出打出来，方便一次定位。
+# 基础镜像 + 挂载自检
+# 坑 1：docker 把拉取进度写到 stderr，混进输出后解析数字很脆 → 用哨兵字符串判断。
+# 坑 2：连不上镜像仓库时（国内常见）报错看起来像挂载问题 → 先把镜像准备好，
+#       并区分「仓库连不上」和「真的挂载不了」两种失败。
 # ---------------------------------------------------------------------------
 Say ""
+Say "==> 准备基础镜像" Cyan
+$ProbeImage = Resolve-Image $Targets[0].Image
+if (-not (Ensure-Image $Targets[0].Image)) {
+    throw "基础镜像 $ProbeImage 不可用 —— 先按上面的提示解决网络/镜像源问题，再重跑"
+}
+
+Say ""
 Say "==> 检查挂载是否正常" Cyan
-Say "  预拉取 debian:12 镜像（第一次会慢一点）…" DarkGray
-& docker pull debian:12 | Out-Null
 
 function Test-MountOnce {
-    param([string[]]$RunArgs)
+    param([string]$Image, [string[]]$RunArgs)
     $cmd = 'if [ -f /src/build-linux.sh ]; then echo MOUNT_OK; ls /src | wc -l; else echo MOUNT_FAIL; fi'
-    $raw = (& docker run --rm @RunArgs debian:12 sh -c $cmd 2>&1 | Out-String)
+    $raw = (& docker run --rm @RunArgs $Image sh -c $cmd 2>&1 | Out-String)
     $count = -1
     foreach ($m in [regex]::Matches($raw, '(?m)^\s*(\d+)\s*$')) {
         $count = [int]$m.Groups[1].Value
@@ -205,10 +245,10 @@ function Test-MountOnce {
 }
 
 $MountStyle = 'v'      # 'v' = -v "path:/src"，'mount' = --mount type=bind,...
-$probe = Test-MountOnce @('-v', "${Proj}:/src")
+$probe = Test-MountOnce -Image $ProbeImage -RunArgs @('-v', "${Proj}:/src")
 if (-not $probe.Ok) {
     Say "  -v 挂载没通过，改用 --mount 写法再试一次…" Yellow
-    $probe = Test-MountOnce @('--mount', "type=bind,source=${Proj},target=/src")
+    $probe = Test-MountOnce -Image $ProbeImage -RunArgs @('--mount', "type=bind,source=${Proj},target=/src")
     if ($probe.Ok) { $MountStyle = 'mount' }
 }
 if (-not $probe.Ok) {
@@ -216,10 +256,17 @@ if (-not $probe.Ok) {
     Say "  docker 的原始输出（最后 8 行）：" Yellow
     @($probe.Raw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 8) |
         ForEach-Object { Say "      $_" DarkGray }
+
+    # 先判断到底是「仓库连不上」还是「真的挂载不了」—— 这两种情况的解法完全不同
+    if ($probe.Raw -match 'registry-1\.docker\.io|deadline exceeded|no such host|TLS handshake|dial tcp|connection refused') {
+        Say "  看起来仍然是**镜像仓库连不上**，不是挂载问题。" Red
+        Say-ImageTrouble
+        throw "拉取镜像失败（网络问题，不是路径问题）"
+    }
     Say "  可能原因：" Yellow
     Say "    · 项目所在磁盘没有共享给 Docker Desktop（Settings → Resources → File sharing）" Yellow
     Say "    · Docker Desktop 的 WSL 集成没启用（Settings → Resources → WSL Integration）" Yellow
-    Say "    · 路径含中文/空格导致挂载异常 → 复制到纯英文路径再跑：" Gray
+    Say "    · 路径含中文/空格导致挂载异常（少数 Docker Desktop 版本会这样）→ 复制到纯英文路径再跑：" Gray
     Say "        robocopy `"$Proj`" C:\build\scrcpy-gui-zh /E" Gray
     Say "        cd C:\build\scrcpy-gui-zh" Gray
     Say "        .\build-windows-docker.ps1" Gray
@@ -243,8 +290,15 @@ foreach ($t in $Targets) {
     # 关键 2：绝不给 build-linux.sh 传 --clean —— 那会删掉 dist/ 里其它架构的产物
     Remove-Item -Recurse -Force "$Proj\build-linux" -ErrorAction SilentlyContinue
 
-    # 先确认容器能起来（ARM 需要 QEMU，起不来就别浪费一小时）
-    $carch = (& docker run --rm --platform $t.Plat $t.Image uname -m 2>&1 | Out-String).Trim()
+    # 先确保镜像在本地（连不上仓库时给出网络/镜像源指引，而不是拖到后面报怪错）
+    if (-not (Ensure-Image $t.Image)) {
+        $Failed += "$($t.Image) $($t.Plat)（镜像不可用）"
+        continue
+    }
+    $img = Resolve-Image $t.Image
+
+    # 再确认容器能起来（ARM 需要 QEMU，起不来就别浪费一小时）
+    $carch = (& docker run --rm --platform $t.Plat $img uname -m 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $carch) {
         Say "  [失败] 容器起不来：$carch" Red
         Say "  ARM 架构需要 QEMU 模拟。Docker Desktop 默认自带；" Yellow
@@ -275,7 +329,7 @@ foreach ($t in $Targets) {
     else {
         $runArgs += @('-v', "${Proj}:/src")
     }
-    $runArgs += @('-w', '/src', $t.Image, 'bash', '-c', $inner)
+    $runArgs += @('-w', '/src', $img, 'bash', '-c', $inner)
 
     & docker @runArgs
     if ($LASTEXITCODE -eq 0) {

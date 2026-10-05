@@ -1,4 +1,16 @@
 ### 修复
+- **区分「镜像仓库连不上」和「真的挂载失败」**：用户实测中文路径挂载正常
+  （容器里 `ls /src` 返回 17 个条目），失败实际是
+  `Get https://registry-1.docker.io/v2/: context deadline exceeded`
+  —— Docker Hub 连不上。现在：
+  · 启动时先 `Ensure-Image`，镜像不在本地才拉取，拉取失败直接给网络/镜像源指引
+  · 挂载失败时先匹配仓库/网络错误特征（registry-1.docker.io / deadline exceeded /
+    TLS handshake …），是网络问题就不再把方向引到「路径含中文」
+  · 每个目标构建前也会 Ensure-Image，拉不到就跳过并计入失败清单
+  · 新增 `-Registry <前缀>`：不改 Docker 设置也能用镜像源，
+    例如 `-Registry docker.m.daocloud.io`
+
+### 修复
 - **容器里没有 locale 会导致构建最后一步失败**：debian:11 / rockylinux:8 这类基础镜像
   的 LANG 是空的，此时 Python 3 的 stdout 默认落到 ASCII，而构建流程最后会运行产物
   做自检（`--selftest` 打印中文），脚本本身也大量输出中文 → UnicodeEncodeError。

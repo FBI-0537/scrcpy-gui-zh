@@ -16,11 +16,14 @@ REM  parts of it would even be executed as commands.
 REM
 REM  Usage (same arguments as the .ps1):
 REM      build-windows-docker.cmd -List                  show the plan only
-REM      build-windows-docker.cmd -Family debian         one distro family
+REM      build-windows-docker.cmd                        all targets (3 by default)
 REM      build-windows-docker.cmd -Arch arm64            one architecture
-REM      build-windows-docker.cmd                        all families, all arches
 REM      build-windows-docker.cmd -Distro debian:11 -Arch x86_64
 REM      build-windows-docker.cmd -SkipEmulated          x86_64 only (fastest)
+REM      build-windows-docker.cmd -Registry docker.m.daocloud.io
+REM                                                      use a registry mirror when
+REM                                                      Docker Hub is unreachable
+REM      build-windows-docker.cmd -AllDistros            per-distro-family matrix
 REM
 REM  Prerequisites: Docker Desktop running; 6 GB+ RAM, 20 GB+ disk for Docker.
 REM ===========================================================================
