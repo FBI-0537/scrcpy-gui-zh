@@ -191,6 +191,8 @@ scrcpy-gui-zh/
 ├── verify-release.py       发布前验收（架构是否与文件名一致、包里组件是否齐全）
 ├── build-windows.ps1       Windows exe 构建（需 UTF-8 BOM）
 ├── build-windows.cmd       Windows 构建入口（自动补 BOM，推荐用这个）
+├── build-windows-docker.ps1 在 Windows 上用 Docker 构建 Linux 全架构产物
+├── build-windows-docker.cmd 上面的入口（自动补 BOM + 绕过执行策略，推荐）
 ├── assets/
 │   ├── scrcpy-gui-zh.png   程序图标（Linux / Windows）
 │   └── scrcpy-gui-zh.ico   Windows 图标
