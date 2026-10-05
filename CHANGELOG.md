@@ -65,6 +65,15 @@
   最小窗口尺寸从 780×640 放宽到 720×480
 
 ### 构建
+- **产物名自动带 glibc 下限 + 兼容性结论**：glibc 只能向后兼容，构建机的 glibc
+  就是产物的下限。现在产物命名为
+  `scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64`（AppImage 同理），构建结束会打印
+  「可以用的系统 ✅ / 用不了的系统 ❌」清单，并提示怎么扩大兼容面
+- **新增 `build-in-docker.sh`**：在 Docker 容器里构建，用来产出兼容面最广的发布包
+  （默认 `debian:11`，glibc 2.31 → 兼容 Debian 11+ / Ubuntu 20.04+ / RHEL 9）。
+  支持 `--distro`、`--list`、`--appimage`、`--no-chown`，其余参数原样转发给构建脚本；
+  容器内以 root 构建后自动把 `dist/` 等属主改回宿主 UID/GID；docker 无权限时
+  自动改用 `sudo docker`
 - **scrcpy 版本不对时优先「下载」而不是「编译」**：新增
   `download_prebuilt_scrcpy` / `install_scrcpy_tree`，从 Debian / Ubuntu 归档
   取最新的 `scrcpy_<ver>_<arch>.deb` 解包（`dpkg-deb -x`，无则 `ar x` + `tar`），

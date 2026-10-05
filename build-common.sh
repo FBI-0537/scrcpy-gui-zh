@@ -610,8 +610,59 @@ download_prebuilt_scrcpy() {
     return 0
 }
 
-# 把解包出来的 Debian 目录结构整理成项目约定的 vendor/scrcpy 布局
-# install_scrcpy_tree <解包目录> <vendor/scrcpy>
+# ---------------------------------------------------------------------------
+# glibc 与产物兼容性
+# ---------------------------------------------------------------------------
+# glibc 只能「向后兼容」：在高版本上编译的产物，在低版本系统上跑不起来
+# （报 GLIBC_2.xx not found）。所以构建机的 glibc 就是产物的下限，
+# 产物名里带上它，用户一眼就知道自己能不能用。
+KNOWN_GLIBC="2.28:Debian 10
+2.31:Debian 11 / Ubuntu 20.04
+2.34:RHEL 9 / Rocky 9 / AlmaLinux 9
+2.35:Ubuntu 22.04
+2.36:Debian 12
+2.39:Ubuntu 24.04
+2.41:Debian 13"
+
+host_glibc() {
+    ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1
+}
+
+# 打印「这个 glibc 下限的产物能用在哪些系统上」
+glibc_compat_lines() {
+    local floor="$1" line gver label found=0
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        gver="${line%%:*}"
+        label="${line#*:}"
+        if ver_ge "$gver" "$floor"; then
+            printf '    ✅ %s（glibc %s）\n' "$label" "$gver"
+            found=1
+        fi
+    done <<EOF
+$KNOWN_GLIBC
+EOF
+    if [ "$found" -eq 0 ]; then
+        printf '    （没有匹配到已知发行版，目标是比对照表更新的系统）\n'
+    fi
+}
+
+# 打印「哪些系统用不了」，用于提醒用户别把产物发给老系统
+glibc_incompat_lines() {
+    local floor="$1" line gver label
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        gver="${line%%:*}"
+        label="${line#*:}"
+        if ! ver_ge "$gver" "$floor"; then
+            printf '    ❌ %s（glibc %s 太旧）\n' "$label" "$gver"
+        fi
+    done <<EOF
+$KNOWN_GLIBC
+EOF
+}
+
+# 把解包出来的 Debian 目录结构整理成项目约定的 vendor/scrcpy 布局# install_scrcpy_tree <解包目录> <vendor/scrcpy>
 install_scrcpy_tree() {
     local src="$1" dest="$2" server
     if [ ! -x "$src/usr/bin/scrcpy" ]; then

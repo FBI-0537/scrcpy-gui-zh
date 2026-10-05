@@ -447,7 +447,9 @@ case "$(uname -m)" in
     *) die "不支持的架构：$(uname -m)（只支持 x86_64 与 aarch64）" ;;
 esac
 info "发行版  ：$DISTRO_NAME（$(distro_family_zh)）"
-info "目标架构：$ARCH_TAG    libc：$(libc_flavor) $(ldd --version 2>&1 | head -1 | awk '{print $NF}')"
+info "目标架构：$ARCH_TAG    libc：$(libc_flavor) $(host_glibc)"
+GLIBC_VER="$(host_glibc)"
+[ -n "$GLIBC_VER" ] || GLIBC_VER="unknown"
 if [ "$DISTRO_FAMILY" = "alpine" ]; then
     warn "Alpine 用 musl libc，PyInstaller 打包兼容性差，建议在 glibc 发行版上构建"
 fi
@@ -877,7 +879,7 @@ cp -a "$APPDIR/$APP_ID.desktop" "$APPDIR/usr/share/applications/"
 # ---------------------------------------------------------------------------
 step "7/9 生成 AppImage"
 
-OUT="$DIST_DIR/$APP_ID-$APP_VER-$ARCH_TAG.AppImage"
+OUT="$DIST_DIR/$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG.AppImage"
 SQFS="$BUILD_ROOT/$APP_ID.squashfs"
 RUNTIME="$BUILD_ROOT/runtime-$ARCH_TAG"
 rm -f "$OUT" "$SQFS"
@@ -1043,6 +1045,17 @@ if [ "$ADB_MDNS" -eq 1 ]; then
     info "无线配对：可用（内嵌 adb $(adb_version_text "$ADB_BIN")，platform-tools ≥ 30）"
 else
     warn "无线配对：不可用（内嵌 adb 过旧，仅 USB 与 USB 转无线可用）"
+fi
+
+# ---- glibc 兼容性结论 ----
+info "glibc 下限：$GLIBC_VER（由构建机决定，产物只能在不低于它的系统上运行）"
+info "可以用的系统："
+glibc_compat_lines "$GLIBC_VER"
+INCOMPAT_LINES="$(glibc_incompat_lines "$GLIBC_VER")"
+if [ -n "$INCOMPAT_LINES" ]; then
+    warn "用不了的系统（会报 GLIBC_$GLIBC_VER not found）："
+    printf '%s\n' "$INCOMPAT_LINES"
+    info "想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-in-docker.sh"
 fi
 if [ "$HOST_FUSE_OK" -eq 1 ]; then
     info "宿主 FUSE：可用（本机可直接运行该 AppImage）"

@@ -85,8 +85,8 @@ snap 版又因为链接 snap 私有 glibc 而无法打包。所以：
 ./build-linux.sh --no-install  # 只检查，缺了就报错退出
 
 # 目标机器
-chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64
-./dist/scrcpy-gui-zh-1.0.0-x86_64
+chmod +x dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64
+./dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64
 ```
 
 构建脚本最后会**实际运行一次产物**（`--selftest`）来验证内嵌的 scrcpy / adb /
@@ -108,8 +108,8 @@ server 都能用，自检不过就不交付。
 
 ```bash
 ./build-appimage.sh --auto-scrcpy --clean
-chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
-./dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
+chmod +x dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
+./dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
 ```
 
 **关于 FUSE**：AppImage 直接运行需要系统的 `libfuse.so.2`。缺失时会在程序启动**之前**
@@ -246,6 +246,9 @@ scrcpy-gui-zh/
   升级前请用**方式一「USB 转无线」**（`adb tcpip` / `adb connect` 老版本就有）
 - **二维码配对与 mDNS 自动发现**还依赖 mDNS 组播，校园网 / 企业网的客户端隔离会让它失效
 - **蓝牙**不支持（ADB 协议不存在蓝牙传输层）
+- **产物名带 glibc 下限**（如 `linux-glibc2.35-x86_64`）：glibc 只能向后兼容，
+  在 Ubuntu 22.04（2.35）构建的产物**跑不了 Debian 11（2.31）**。想兼容更老的系统用
+  `./build-in-docker.sh`（默认 `debian:11` 构建 → 兼容 Debian 11+ / Ubuntu 20.04+ / RHEL 9）
 - **AppImage 不能跨架构**：x86_64 与 arm64 要各打一次
 - **AppImage 不打包** glibc、显卡驱动、X11/Wayland——这些必须用宿主机的
 - **USB 权限** 必须在每台 Linux 机器上装一次 udev 规则

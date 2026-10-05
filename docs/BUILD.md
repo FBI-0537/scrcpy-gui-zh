@@ -171,6 +171,77 @@ http://deb.debian.org/debian/pool/main/s/scrcpy/
 解包用 `dpkg-deb -x`（Debian 系），没有则用 `ar x` + `tar`（其它发行版），
 两者都没有就直接走编译。
 
+### 2.5 glibc 与跨发行版兼容：产物能用在哪、该怎么命名
+
+**glibc 只能向后兼容** —— 在高版本 glibc 上编译的产物，在低版本系统上直接报
+`GLIBC_2.xx not found`。所以**构建机的 glibc 就是产物的下限**。
+
+| 构建环境 | glibc | 产物可用在 |
+|---|---|---|
+| **Debian 11** | 2.31 | Debian 11/12/13、Ubuntu 20.04+、RHEL 9 —— **兼容面最广** |
+| Ubuntu 22.04 | 2.35 | Debian 12/13、Ubuntu 22.04+ |
+| Ubuntu 24.04 | 2.39 | Debian 13、Ubuntu 24.04+ |
+
+⚠️ **别按发行版号判断**：Ubuntu 24.04 的 glibc（2.39）比 Debian 12（2.36）**高**，
+所以在 Ubuntu 24.04 上构建的产物**跑不了 Debian 12**。
+
+**产物名会自动带上 glibc 下限**：
+
+```
+scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64            # 单个可执行文件
+scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage   # AppImage
+```
+
+构建结束会直接给出兼容性结论：
+
+```
+[信息] glibc 下限：2.35（由构建机决定，产物只能在不低于它的系统上运行）
+[信息] 可以用的系统：
+    ✅ Ubuntu 22.04（glibc 2.35）
+    ✅ Debian 12（glibc 2.36）
+    ✅ Ubuntu 24.04（glibc 2.39）
+    ✅ Debian 13（glibc 2.41）
+[注意] 用不了的系统（会报 GLIBC_2.35 not found）：
+    ❌ Debian 11 / Ubuntu 20.04（glibc 2.31）
+    ❌ RHEL 9 / Rocky 9 / AlmaLinux 9（glibc 2.34）
+[信息] 想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-in-docker.sh
+```
+
+**release 该怎么命名**：
+
+| 名字 | 什么时候能用 |
+|---|---|
+| `...-linux-x86_64` | 通用；README 里说明 glibc 要求 |
+| `...-linux-glibc2.35-x86_64` | ✅ **推荐**，用户一眼知道能不能用 |
+| `...-debian12-x86_64` | ⚠️ 只有**真在 Debian 12 上构建**才该这么叫 |
+| `...-debian-x86_64` | ❌ 不要用：既没覆盖 Debian 全系（Debian 11 跑不了），也并非 Debian 构建 |
+
+**用 Docker 在指定发行版里构建**（最省事，不用第二台机器）：
+
+```bash
+./build-in-docker.sh --list                  # 看可选镜像与各自的兼容范围
+./build-in-docker.sh                         # 默认 debian:11（兼容面最广）
+./build-in-docker.sh --distro debian:12
+./build-in-docker.sh --auto-scrcpy --clean   # 其余参数原样传给 build-linux.sh
+./build-in-docker.sh --appimage --distro debian:11
+```
+
+容器里以 root 构建（构建脚本需要 apt 装依赖），结束后会自动把 `dist/`、
+`build-linux/`、`vendor/` 的属主改回你的 UID/GID；docker 没权限时会自动尝试
+`sudo docker`。
+
+**验证产物真的能跑**（比看文档可靠得多）：
+
+```bash
+docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
+```
+
+跑得通就是真能用；跑不通会直接告诉你缺哪个 `GLIBC_2.xx`。
+
+> 注意：glibc 只是一半。产物**故意不打包**显卡驱动栈与 X11/Wayland
+> （`libGL/libEGL/libdrm/libgbm/libvulkan` 用宿主机的），所以**无桌面环境的
+> 服务器上跑不起来**。
+
 ## 3. 方式一：直接运行源码
 
 ```bash
@@ -338,7 +409,7 @@ Python 解释器 + Tcl/Tk + 界面程序 + segno
 ./build-linux.sh --appimage                       # 转去调用 build-appimage.sh
 ```
 
-产物：`dist/scrcpy-gui-zh-1.0.0-x86_64`（约 150–250 MB，未压缩）。
+产物：`dist/scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64`（约 150–250 MB，未压缩）。
 
 **两个注意事项**：
 
@@ -435,7 +506,7 @@ AppImage 只有在「运行」时才需要 `libfuse.so.2`——`appimagetool` �
 > 把产物发给 20 台别人的机器时，构建机装没装毫无影响；塞进依赖清单只会
 > 让 `--yes` 去装一个构建用不到的东西。
 
-产物：`dist/scrcpy-gui-zh-1.0.0-<x86_64|aarch64>.AppImage`
+产物：`dist/scrcpy-gui-zh-1.0.0-linux-glibc<版本>-<x86_64|aarch64>.AppImage`
 
 可用环境变量覆盖自动探测：
 
@@ -505,8 +576,8 @@ export SCRCPY_SERVER_PATH="$HERE/usr/share/scrcpy/scrcpy-server"
 ### 5.5 目标机运行
 
 ```bash
-chmod +x scrcpy-gui-zh-1.0.0-x86_64.AppImage
-./scrcpy-gui-zh-1.0.0-x86_64.AppImage
+chmod +x scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
+./scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64.AppImage
 ```
 
 - 首次启动会检测 USB 权限，弹窗一键修复（`pkexec` 提权）
