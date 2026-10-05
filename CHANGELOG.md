@@ -65,6 +65,21 @@
   最小窗口尺寸从 780×640 放宽到 720×480
 
 ### 构建
+- **新增 `build-all.sh`：一次构建多发行版 × 多架构的单个可执行文件**
+  （默认矩阵：x86_64 / arm64 / armhf；`--arch`、`--distros all`、`--appimage`、
+  `--skip-emulated`、`--list`）。按「glibc 档位 × 架构」组织，因为决定兼容性的
+  是 glibc 而不是发行版名字。每个目标构建前自行清理中间目录（**不能给容器传
+  `--clean`**，那会把 dist/ 里其它架构的产物一起删掉）
+- **ARM 架构支持修正**：Google 官方 platform-tools 只有 x86_64 版，原先脚本在
+  arm64/armhf 上会下载 x86_64 的 adb 然后报错、进而中止构建。现在会识别架构，
+  非 x86_64 改从 Debian/Ubuntu 归档取本架构的 `adb`（新增 `download_prebuilt_adb`），
+  取不到就提示并需要显式 `--allow-old-adb`（默认仍不偷偷降级）
+- **`vendor/` 跨架构污染修复**：`vendor/scrcpy` 里可能是别的架构的二进制，
+  原先只检查文件存在就复用，会把错误架构的 scrcpy 打进包里；现在会实际执行
+  `scrcpy --version` 校验版本，跑不起来就重新获取
+- **`build-in-docker.sh` 新增 `--platform`**，用于跨架构构建（配合 QEMU），
+  并在启动前校验容器架构与 glibc，QEMU 不可用时给出明确修法
+- 文档：BUILD.md 新增 2.6 节（矩阵构建、ARM 限制、时间预期）
 - **产物名自动带 glibc 下限 + 兼容性结论**：glibc 只能向后兼容，构建机的 glibc
   就是产物的下限。现在产物命名为
   `scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64`（AppImage 同理），构建结束会打印

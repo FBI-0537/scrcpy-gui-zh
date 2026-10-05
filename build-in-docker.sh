@@ -71,6 +71,7 @@ EOF
 DISTRO="debian:11"
 INNER_SCRIPT="build-linux.sh"
 DO_CHOWN=1
+PLATFORM=""
 FORWARD=()
 
 while [ "$#" -gt 0 ]; do
@@ -78,6 +79,9 @@ while [ "$#" -gt 0 ]; do
         --distro)   [ "$#" -ge 2 ] || die "--distro 后面要跟镜像名，例如 --distro debian:11"
                     DISTRO="$2"; shift 2 ;;
         --distro=*) DISTRO="${1#*=}"; shift ;;
+        --platform) [ "$#" -ge 2 ] || die "--platform 后面要跟平台，例如 linux/arm64"
+                    PLATFORM="$2"; shift 2 ;;
+        --platform=*) PLATFORM="${1#*=}"; shift ;;
         --appimage) INNER_SCRIPT="build-appimage.sh"; shift ;;
         --no-chown) DO_CHOWN=0; shift ;;
         --list)     list_images; exit 0 ;;
@@ -135,14 +139,32 @@ info "构建脚本  ：$INNER_SCRIPT"
 info "传入参数  ：${FORWARD[*]:-（无）}"
 
 # ---- 先看容器里的 glibc，好提前告诉用户产物能用在哪些系统 ----
-CONTAINER_GLIBC="$($DOCKER run --rm "$DISTRO" sh -c 'ldd --version 2>/dev/null | head -1' 2>/dev/null \
+PLAT_ARGS=()
+if [ -n "$PLATFORM" ]; then
+    PLAT_ARGS=(--platform "$PLATFORM")
+fi
+
+CONTAINER_GLIBC="$($DOCKER run --rm "${PLAT_ARGS[@]}" "$DISTRO" sh -c 'ldd --version 2>/dev/null | head -1' 2>/dev/null \
     | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)"
+CONTAINER_ARCH="$($DOCKER run --rm "${PLAT_ARGS[@]}" "$DISTRO" uname -m 2>/dev/null | tr -d '\r' || true)"
+if [ -n "$CONTAINER_ARCH" ]; then
+    info "容器架构  ：$CONTAINER_ARCH${PLATFORM:+（--platform $PLATFORM）}"
+fi
 if [ -n "$CONTAINER_GLIBC" ]; then
     info "容器 glibc：$CONTAINER_GLIBC"
     info "产物将可用于："
     glibc_compat_lines "$CONTAINER_GLIBC"
 else
     warn "拿不到容器里的 glibc（镜像可能是首次拉取），构建结束后会再报一次"
+fi
+
+# 跨架构构建靠 QEMU 模拟，先确认能用，不行就别浪费半小时
+if [ -n "$PLATFORM" ] && [ -z "$CONTAINER_ARCH" ]; then
+    die "无法在 $PLATFORM 下启动 $DISTRO（多半是没启用 QEMU 模拟）。
+     Docker Desktop：设置 → General 里勾选 \"Use containerd...\" 不需要；
+     实际需要的是 binfmt 支持，Docker Desktop 默认自带；若你用的是原生
+     docker（Linux），执行一次：
+         docker run --privileged --rm tonistiigi/binfmt --install all"
 fi
 
 # ---- 组装容器内要执行的命令 ----
@@ -166,6 +188,9 @@ if [ '$DO_CHOWN' = '1' ]; then
 fi"
 
 DOCKER_ARGS=(run --rm -i -v "$SCRIPT_DIR:/src" -w /src)
+if [ -n "$PLATFORM" ]; then
+    DOCKER_ARGS=(run --rm -i --platform "$PLATFORM" -v "$SCRIPT_DIR:/src" -w /src)
+fi
 if [ -t 0 ] && [ -t 1 ]; then
     DOCKER_ARGS+=(-t)
 fi

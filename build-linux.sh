@@ -586,8 +586,20 @@ if [ -n "$SCRCPY_REASON" ]; then
         server)  warn "找不到 scrcpy-server（缺少它无法投屏）" ;;
     esac
 
+    # 注意：vendor/ 里的 scrcpy 可能是**别的架构**编译/下载的（多架构构建时很常见），
+    # 所以必须实际跑一次并校验版本，不能只看文件存不存在
+    VENDOR_SCRCPY_OK=0
     if [ -x "$VENDOR_SCRCPY/bin/scrcpy" ] \
        && [ -f "$VENDOR_SCRCPY/share/scrcpy/scrcpy-server" ]; then
+        vv="$(read_scrcpy_ver "$VENDOR_SCRCPY/bin/scrcpy")"
+        if [ -n "$vv" ] && ver_ge "$vv" "$MIN_SCRCPY"; then
+            VENDOR_SCRCPY_OK=1
+        else
+            warn "项目里的 vendor/scrcpy 跑不起来或版本过低（可能是别的架构的），重新获取"
+        fi
+    fi
+
+    if [ "$VENDOR_SCRCPY_OK" -eq 1 ]; then
         info "改用项目内已有的 scrcpy：$VENDOR_SCRCPY"
         SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
         SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
@@ -664,11 +676,29 @@ elif [ -x "$VENDOR_PT/adb" ] && adb_mdns_supported "$VENDOR_PT/adb"; then
     ADB_BIN="$VENDOR_PT/adb"
     ADB_MDNS=1
 elif [ "$AUTO_ADB" -eq 1 ]; then
-    warn "系统 adb 不支持 mdns 子命令（版本 $(adb_version_text "$ADB_BIN")）"
-    info "自动获取官方 platform-tools 到项目 vendor/platform-tools/（约 5MB，无需 root）"
-    if fetch_platform_tools "$VENDOR_PT"; then
-        ADB_BIN="$VENDOR_PT/adb"
-        ADB_MDNS=1
+    warn "系统 adb 不支持无线配对（版本 $(adb_version_text "$ADB_BIN")）"
+    GOT_ADB=0
+    if platform_tools_available_for_arch; then
+        info "自动获取官方 platform-tools 到项目 vendor/platform-tools/（约 5MB，无需 root）"
+        if fetch_platform_tools "$VENDOR_PT"; then
+            ADB_BIN="$VENDOR_PT/adb"
+            ADB_MDNS=1
+            GOT_ADB=1
+        fi
+    else
+        warn "Google 官方 platform-tools 只提供 x86_64 版，$ARCH_TAG 上没有官方包"
+    fi
+    if [ "$GOT_ADB" -eq 0 ]; then
+        info "改为从 Debian/Ubuntu 归档取本架构（$ARCH_TAG）的 adb…"
+        if download_prebuilt_adb "$VENDOR_PT"; then
+            if adb_mdns_supported "$VENDOR_PT/adb"; then
+                ADB_BIN="$VENDOR_PT/adb"
+                ADB_MDNS=1
+            else
+                warn "  · 取到的 adb $(adb_version_text "$VENDOR_PT/adb") 仍不支持无线配对"
+                warn "  · ARM 上确实不容易拿到 platform-tools ≥ 30，无线配对会不可用"
+            fi
+        fi
     fi
 fi
 if [ "$ADB_MDNS" -eq 1 ]; then
