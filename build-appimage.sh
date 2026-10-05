@@ -255,7 +255,7 @@ BUILD_ROOT="$SCRIPT_DIR/build-appimage"
 APPDIR="$BUILD_ROOT/AppDir"
 DIST_DIR="$SCRIPT_DIR/dist"
 APP_ID="scrcpy-gui-zh"
-APP_VER="1.0.0"
+APP_VER="${APP_VER:-1.0.0}"   # 可被环境变量覆盖，CI 用它写入版本号
 
 # 项目内的 vendor 目录：--auto-scrcpy 编译出来的东西都装在这里，不污染系统
 VENDOR_DIR="$SCRIPT_DIR/vendor"

@@ -1,0 +1,161 @@
+name: Release
+
+# 打 tag（v1.0.0）→ 自动构建全矩阵 → 验收 → 上传到 GitHub Release 资产
+# 也可以手动触发（Actions → Release → Run workflow），只构建不发布，方便先测试
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（不含 v），例如 1.0.0"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux：在容器里构建，用最老的发行版拿到最广的兼容面
+  # ---------------------------------------------------------------------------
+  linux:
+    name: Linux ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:11
+            platform: linux/amd64
+            label: glibc2.31-x86_64
+            extra: ""
+          - image: ubuntu:22.04
+            platform: linux/amd64
+            label: glibc2.35-x86_64
+            extra: ""
+          - image: ubuntu:24.04
+            platform: linux/amd64
+            label: glibc2.39-x86_64
+            extra: ""
+          - image: debian:11
+            platform: linux/arm64
+            label: glibc2.31-aarch64
+            extra: "--allow-old-adb"
+          - image: ubuntu:22.04
+            platform: linux/arm64
+            label: glibc2.35-aarch64
+            extra: "--allow-old-adb"
+          - image: debian:11
+            platform: linux/arm/v7
+            label: glibc2.31-armv7l
+            extra: "--allow-old-adb"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: ver
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ARM 架构靠 QEMU 模拟（GitHub 托管的 runner 需要这一步）
+      - uses: docker/setup-qemu-action@v3
+
+      - name: 在 ${{ matrix.image }} 容器里构建
+        shell: bash
+        run: |
+          docker run --rm \
+            --platform ${{ matrix.platform }} \
+            -v "$PWD:/src" -w /src \
+            -e APP_VER="${{ steps.ver.outputs.version }}" \
+            ${{ matrix.image }} \
+            bash -c "./build-linux.sh --yes ${{ matrix.extra }}"
+
+      - name: 验收产物（架构是否与文件名一致、组件是否齐全）
+        run: python3 verify-release.py dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Windows：单个 exe（内含 scrcpy / adb / 其依赖 DLL）
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}".TrimStart("v")
+          } else {
+            $v = "${{ github.event.inputs.version }}"
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 构建单文件 exe
+        shell: pwsh
+        run: .\build-windows.cmd -SingleFile -Clean
+
+      - name: 规范化产物名
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          $exe = Get-ChildItem -Path dist -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "没有生成 exe" }
+          $dst = Join-Path "dist" "scrcpy-gui-zh-$ver-windows-x86_64.exe"
+          Move-Item $exe.FullName $dst -Force
+          Write-Host "产物：$dst"
+
+      - name: 验收产物
+        run: python verify-release.py dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/*.exe
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 发布：把上面所有产物汇总成 GitHub Release 资产
+  # ---------------------------------------------------------------------------
+  publish:
+    name: 上传到 Release
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: 生成校验和
+        run: |
+          cd assets
+          sha256sum * > SHA256SUMS.txt
+          ls -lh
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

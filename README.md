@@ -238,6 +238,7 @@ scrcpy-gui-zh/
 | [docs/USAGE.md](docs/USAGE.md) | 四种连接方式详解、参数逐项说明、快捷键、录屏、多设备 |
 | [docs/BUILD.md](docs/BUILD.md) | 三种构建方式、AppImage 打包原理、跨架构构建、从源码编译 scrcpy |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | USB 权限、mDNS 全空、卡在配对、Android 14+、SDL3、glibc、FUSE 等 |
+| [docs/RELEASE.md](docs/RELEASE.md) | 发布流程：打 tag 自动构建上传、手动发布、资产命名规范、检查清单 |
 
 ## 已知限制
 

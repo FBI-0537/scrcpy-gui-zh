@@ -22,3 +22,6 @@ venv/
 # 系统
 .DS_Store
 Thumbs.db
+
+# 本地发布暂存目录（二进制走 GitHub Release 资产，不进版本库）
+release/
