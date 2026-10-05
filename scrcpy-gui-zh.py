@@ -291,6 +291,9 @@ def usb_permission_denied():
 PLATFORM_TOOLS_URL = ("https://dl.google.com/android/repository/"
                       "platform-tools-latest-linux.zip")
 
+# mDNS 网络探测的监听时长（秒）
+MDNS_PROBE_SECONDS = 15
+
 
 def adb_version_text():
     """adb 版本描述，例如 '35.0.2-12345678'（会去掉 'Version ' 前缀）。"""
@@ -448,6 +451,94 @@ def mdns_troubleshooting_lines():
             "5) 是否连在「访客网络」，或路由器开了 AP 隔离 / 组播过滤",
             "6) 都不通就改用「方式二：配对码」，它不依赖 mDNS",
         ]
+    return lines
+
+
+MDNS_ADDR = "224.0.0.251"
+
+
+def mdns_network_probe(seconds=15, log=None):
+    """直接监听 mDNS 组播，判断组播到底通不通（ping 通不代表组播通）。
+
+    返回 {"packets": 包数, "sources": {来源 IP}, "adb_services": [名字], "error": ""}
+    """
+    import socket as _socket
+    import struct as _struct
+
+    result = {"packets": 0, "sources": set(), "adb_services": [], "error": ""}
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM, _socket.IPPROTO_UDP)
+    try:
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    except OSError:
+        pass
+    try:
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
+    except (AttributeError, OSError):
+        pass
+    try:
+        sock.bind(("", 5353))
+    except OSError as exc:
+        result["error"] = "无法监听 5353/udp：%s" % exc
+        sock.close()
+        return result
+    try:
+        mreq = _struct.pack("4s4s", _socket.inet_aton(MDNS_ADDR),
+                            _socket.inet_aton("0.0.0.0"))
+        sock.setsockopt(_socket.IPPROTO_IP, _socket.IP_ADD_MEMBERSHIP, mreq)
+    except OSError as exc:
+        result["error"] = "加入组播组 %s 失败：%s" % (MDNS_ADDR, exc)
+        sock.close()
+        return result
+
+    sock.settimeout(1.0)
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            data, addr = sock.recvfrom(4096)
+        except _socket.timeout:
+            continue
+        except OSError:
+            break
+        result["packets"] += 1
+        result["sources"].add(addr[0])
+        if b"_adb" in data:
+            # 粗解析：把报文里的可打印字符串挖出来找服务名
+            names, cur = [], []
+            for byte in data:
+                if 32 <= byte < 127:
+                    cur.append(chr(byte))
+                else:
+                    if len(cur) >= 4:
+                        names.append("".join(cur))
+                    cur = []
+            if len(cur) >= 4:
+                names.append("".join(cur))
+            for name in names:
+                if "_adb" in name:
+                    entry = "%s（来自 %s）" % (name, addr[0])
+                    if entry not in result["adb_services"]:
+                        result["adb_services"].append(entry)
+    sock.close()
+    return result
+
+
+def network_context_lines():
+    """打印网络环境，帮助判断组播为什么不通。"""
+    lines = []
+    vm = in_virtual_machine()
+    lines.append("虚拟机      ：%s" % (vm or "未检测到（疑似物理机）"))
+    if IS_WIN:
+        return lines
+    _rc, out = run(["ip", "-4", "route", "show", "default"], timeout=10)
+    for line in out.splitlines():
+        if line.strip():
+            lines.append("默认路由    ：%s" % line.strip())
+    _rc, out = run(["ip", "-4", "addr", "show"], timeout=10)
+    for line in out.splitlines():
+        text = line.strip()
+        if text.startswith("inet "):
+            lines.append("本机地址    ：%s" % text.split()[1])
+    lines.append("判断依据    ：本机 192.168.x/24 而手机 10.x → 基本可确定是 NAT 网络")
     return lines
 
 
@@ -1002,7 +1093,9 @@ class ScrcpyGui:
                                       command=self.qr_copy_payload, state="disabled")
         self.btn_qr_copy.pack(anchor="w")
         ttk.Button(right, text="mDNS 诊断", command=self.wifi_mdns_diag).pack(anchor="w", pady=(4, 0))
-        ttk.Label(right, text="（卡在「正在配对设备」时点这个）",
+        ttk.Button(right, text="网络探测（测组播）",
+                   command=self.wifi_net_probe).pack(anchor="w", pady=(4, 0))
+        ttk.Label(right, text="（卡在「正在配对设备」时先点「网络探测」）",
                   style="Hint.TLabel").pack(anchor="w", pady=(4, 0))
 
         box4 = ttk.LabelFrame(parent, text=" 其它 ", padding=10)
@@ -1468,6 +1561,54 @@ class ScrcpyGui:
         self.log("IP 和端口已自动填好，现在只需输入手机上的 6 位配对码，点「配对」。")
 
     # ---------- 二维码配对 ----------
+
+    def wifi_net_probe(self):
+        """直接监听 mDNS 组播，判断『组播到底通不通』。
+
+        ping 走单播、mDNS 走组播，能 ping 通不代表发现得了设备。
+        """
+        if not self._need_adb():
+            return
+        self.log("=" * 46)
+        self.log("网络探测（测 mDNS 组播是否可达）")
+        for line in network_context_lines():
+            self.log("  " + line)
+        self.log("")
+        self.log("正在监听 mDNS 组播 %d 秒 ——" % MDNS_PROBE_SECONDS)
+        self.log("请现在把手机停在「设置 → 开发者选项 → 无线调试 → 使用二维码配对设备」界面…")
+
+        def worker():
+            res = mdns_network_probe(MDNS_PROBE_SECONDS, log=self.log)
+            if res["error"]:
+                self.log("！ %s" % res["error"])
+                self.log("=" * 46)
+                return
+            self.log("收到 mDNS 包：%d 个，来自 %d 个设备"
+                     % (res["packets"], len(res["sources"])))
+            for ip in sorted(res["sources"])[:15]:
+                self.log("     来源 %s" % ip)
+            if res["adb_services"]:
+                self.log("★ 发现 ADB 服务：")
+                for item in res["adb_services"]:
+                    self.log("     %s" % item)
+            else:
+                self.log("没有发现任何 _adb 服务")
+
+            if res["packets"] == 0:
+                self.log("→ 一个 mDNS 包都没收到：组播被挡住了。")
+                self.log("  这与能不能 ping 通无关 —— ping 是单播，mDNS 是组播。")
+                if in_virtual_machine():
+                    self.log("  你在虚拟机里：网络改成「桥接模式」后重启虚拟机（NAT 不通组播）。")
+                self.log("  校园网 / 企业网的 AP 通常过滤组播，可先用手机热点验证：")
+                self.log("    手机开热点 → 电脑连这个热点 → 手机与电脑直连，没有中间设备过滤。")
+            elif not res["adb_services"]:
+                self.log("→ 组播是通的（能收到别的设备），但没看到手机广播。")
+                self.log("  确认：手机就停在二维码配对界面、Wi-Fi 没断、和电脑在同一网段。")
+            else:
+                self.log("→ 组播正常，而且看到了手机的 ADB 广播，可以直接去配对。")
+            self.log("=" * 46)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def wifi_mdns_diag(self):
         """一键诊断 mDNS 发现能力，用于排查二维码配对卡住的问题。"""
