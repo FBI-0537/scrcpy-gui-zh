@@ -209,6 +209,9 @@ build_scrcpy_from_source() {
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "发行版没有 SDL3（老发行版常见），改为自行编译到 vendor/sdl3"
         info "这是整个流程最耗时的一步，请耐心等待…"
+        # 编 SDL3 必须有 X11 / Wayland 的头文件，否则 cmake 会静默禁用这些
+        # 视频后端，产物在桌面机上开不了窗口
+        install_keys_optional x11-dev
         sdlver="$(github_latest_tag https://api.github.com/repos/libsdl-org/SDL/releases/latest)"
         sdlver="${sdlver#release-}"
         [ -n "$sdlver" ] || die "无法确定 SDL3 版本，请检查网络 / 系统代理"

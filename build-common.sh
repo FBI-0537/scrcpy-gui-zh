@@ -156,6 +156,46 @@ pkg_name_for_key() {
         binutils)  printf 'binutils\n' ;;
         tar)       printf 'tar\n' ;;
         findutils) printf 'findutils\n' ;;
+        # ------------------------------------------------------------------
+        # 编译 scrcpy 需要的开发库
+        # 注意：一个键映射到多个包时必须**一行一个**，因为 pkg_names 是按行
+        # 拆分再交给包管理器的；写成空格分隔会被当成一个包名而安装失败。
+        # ------------------------------------------------------------------
+        ffmpeg-dev)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'libavcodec-dev\nlibavformat-dev\nlibavutil-dev\nlibswresample-dev\n' ;;
+                rhel)   printf 'ffmpeg-devel\n' ;;
+                arch)   printf 'ffmpeg\n' ;;
+                suse)   printf 'ffmpeg-devel\n' ;;
+                alpine) printf 'ffmpeg-dev\n' ;;
+            esac ;;
+        libusb-dev)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'libusb-1.0-0-dev\n' ;;
+                rhel)   printf 'libusb1-devel\n' ;;
+                arch)   printf 'libusb\n' ;;
+                suse)   printf 'libusb-1_0-devel\n' ;;
+                alpine) printf 'libusb-dev\n' ;;
+            esac ;;
+        sdl3-dev)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'libsdl3-dev\n' ;;
+                rhel)   printf 'SDL3-devel\n' ;;
+                arch)   printf 'sdl3\n' ;;
+                suse)   printf 'libSDL3-devel\n' ;;
+                alpine) printf 'sdl3-dev\n' ;;
+            esac ;;
+        # SDL3 从源码编译时需要的 X11 / Wayland 头文件。
+        # 不装的话 cmake 会**静默禁用**这些视频后端，编出来的 SDL3 在桌面机上
+        # 根本开不了窗口 —— 产物看起来正常，实际不能用。
+        x11-dev)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'libx11-dev\nlibxext-dev\nlibxrandr-dev\nlibxi-dev\nlibxcursor-dev\nlibxfixes-dev\nlibxss-dev\nlibxkbcommon-dev\nlibwayland-dev\n' ;;
+                rhel)   printf 'libX11-devel\nlibXext-devel\nlibXrandr-devel\nlibXi-devel\nlibXcursor-devel\nlibXfixes-devel\nlibXScrnSaver-devel\nlibxkbcommon-devel\nwayland-devel\n' ;;
+                arch)   printf 'libx11\nlibxext\nlibxrandr\nlibxi\nlibxcursor\nlibxfixes\nlibxss\nlibxkbcommon\nwayland\n' ;;
+                suse)   printf 'libX11-devel\nlibXext-devel\nlibXrandr-devel\nlibXi-devel\nlibXcursor-devel\nlibXfixes-devel\nlibXss-devel\nlibxkbcommon-devel\nwayland-devel\n' ;;
+                alpine) printf 'libx11-dev\nlibxext-dev\nlibxrandr-dev\nlibxi-dev\nlibxcursor-dev\nlibxfixes-dev\nlibxscrnsaver-dev\nlibxkbcommon-dev\nwayland-dev\n' ;;
+            esac ;;
         adb)
             case "$DISTRO_FAMILY" in
                 debian) printf 'adb\n' ;;
