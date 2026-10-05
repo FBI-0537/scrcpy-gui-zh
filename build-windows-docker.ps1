@@ -58,6 +58,7 @@ param(
     [string]$Registry = '',
     [string]$AptMirror = '',
     [string]$Dns = '',
+    [string]$PipMirror = '',
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
@@ -380,6 +381,14 @@ foreach ($t in $Targets) {
         if (-not $mirrorHost) { $mirrorHost = $AptMirror }
         $noProxy = "$mirrorHost,localhost,127.0.0.1,::1"
         $runArgs += @('-e', "NO_PROXY=$noProxy", '-e', "no_proxy=$noProxy")
+    }
+    # step 1 会用 pip 装 PyInstaller（走 pypi.org，https）—— 国内同样容易被卡住，
+    # -PipMirror 让 pip 直接走国内 PyPI 镜像（环境变量会被容器内的 pip 继承）
+    if ($PipMirror) {
+        $pipHost = ''
+        try { $pipHost = ([uri]$PipMirror).Host } catch { $pipHost = '' }
+        $runArgs += @('-e', "PIP_INDEX_URL=$PipMirror")
+        if ($pipHost) { $runArgs += @('-e', "PIP_TRUSTED_HOST=$pipHost") }
     }
     $runArgs += @('-w', '/src', $img, 'bash', '-c', $inner)
 
