@@ -58,13 +58,21 @@ die()  { err "$*"; exit 1; }
 
 # 矩阵条目：平台|镜像|架构分组|说明
 MATRIX_DEFAULT="
-linux/amd64|debian:11|x86_64|Debian 11（glibc 2.31）—— 兼容面最广，推荐发布
-linux/amd64|ubuntu:22.04|x86_64|Ubuntu 22.04（glibc 2.35）
-linux/amd64|ubuntu:24.04|x86_64|Ubuntu 24.04（glibc 2.39）
-linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36）—— 无线配对可用
-linux/arm64|debian:11|arm64|Debian 11 arm64（glibc 2.31）—— 兼容最老的 ARM，无无线配对
-linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36）—— 无线配对可用
+linux/amd64|debian:12|x86_64|Debian 12+ / Ubuntu 22.04+（glibc 2.36）
+linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36，无线配对可用）
+linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36，无线配对可用）
+linux/amd64|debian:11|x86_64|Debian 11+ / Ubuntu 20.04+（glibc 2.31，兼容最老）
+linux/amd64|rockylinux:8|x86_64|RHEL 8+ / Rocky 8+ / CentOS 8+（glibc 2.28）
+linux/arm64|rockylinux:8|arm64|RHEL 8+ arm64（glibc 2.28）
+linux/amd64|archlinux:latest|x86_64|Arch / Manjaro / EndeavourOS（滚动发行版）
+linux/amd64|opensuse/leap:15.5|x86_64|openSUSE Leap 15.5+（glibc 2.31）
+linux/arm64|opensuse/leap:15.5|arm64|openSUSE Leap 15.5+ arm64
 "
+
+# 各家族的 ARM 支持情况（镜像本身的限制，不是脚本的）：
+#   Debian 系 / openSUSE 系：amd64 + arm64 + arm/v7（openSUSE 无 arm/v7 官方镜像）
+#   红帽系：**没有 32 位 ARM**（RHEL 早就砍掉了）
+#   Arch 系：官方镜像**只有 x86_64**（Arch Linux ARM 是另一个项目）
 # 说明：ARM 上能否无线配对取决于基础镜像的 glibc ——
 #   debian:12（glibc 2.36）能装 bookworm-backports 的 adb 34.0.5 → 有 adb pair
 #   debian:11（glibc 2.31）所有候选 adb 都跑不起来 → 只有 USB / USB 转无线
@@ -76,12 +84,19 @@ linux/amd64|debian:13|x86_64|Debian 13（glibc 2.41）
 linux/amd64|ubuntu:20.04|x86_64|Ubuntu 20.04（glibc 2.31）
 linux/amd64|ubuntu:22.04|x86_64|Ubuntu 22.04（glibc 2.35）
 linux/amd64|ubuntu:24.04|x86_64|Ubuntu 24.04（glibc 2.39）
-linux/arm64|debian:11|arm64|Debian 11 arm64（glibc 2.31）
-linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36）
+linux/arm64|debian:11|arm64|Debian 11 arm64（glibc 2.31，无无线配对）
+linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36，无线配对可用）
+linux/arm64|debian:13|arm64|Debian 13 arm64（glibc 2.41，无线配对可用）
 linux/arm64|ubuntu:22.04|arm64|Ubuntu 22.04 arm64（glibc 2.35）
-linux/arm64|ubuntu:24.04|arm64|Ubuntu 24.04 arm64（glibc 2.39）
-linux/arm/v7|debian:11|armhf|Debian 11 armhf（glibc 2.31）
-linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36）
+linux/arm/v7|debian:11|armhf|Debian 11 armhf（glibc 2.31，无无线配对）
+linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36，无线配对可用）
+linux/amd64|rockylinux:8|x86_64|RHEL 8+（glibc 2.28）
+linux/arm64|rockylinux:8|arm64|RHEL 8+ arm64
+linux/amd64|rockylinux:9|x86_64|RHEL 9+（glibc 2.34）
+linux/arm64|rockylinux:9|arm64|RHEL 9+ arm64
+linux/amd64|archlinux:latest|x86_64|Arch / Manjaro
+linux/amd64|opensuse/leap:15.5|x86_64|openSUSE Leap 15.5+
+linux/arm64|opensuse/leap:15.5|arm64|openSUSE Leap 15.5+ arm64
 "
 
 # 可选镜像及其 glibc（镜像:glibc），用于 --list
@@ -116,6 +131,7 @@ EOF
 DISTRO=""
 PLATFORM=""
 ARCH_FILTER=""
+FAMILY_FILTER=""
 MATRIX="$MATRIX_DEFAULT"
 SKIP_EMULATED=0
 DRY_RUN=0
@@ -135,6 +151,9 @@ while [ "$#" -gt 0 ]; do
         --distros)       [ "$#" -ge 2 ] || die "--distros 后面要跟 default 或 all"
                          if [ "$2" = "all" ]; then MATRIX="$MATRIX_ALL"; else MATRIX="$MATRIX_DEFAULT"; fi
                          shift 2 ;;
+        --family)        [ "$#" -ge 2 ] || die "--family 后面要跟家族：debian / rhel / arch / suse"
+                         FAMILY_FILTER="$2"; shift 2 ;;
+        --family=*)      FAMILY_FILTER="${1#*=}"; shift ;;
         --skip-emulated) SKIP_EMULATED=1; shift ;;
         --list)          DRY_RUN=1; shift ;;
         -h|--help)       sed -n '2,50p' "${BASH_SOURCE[0]}"; exit 0 ;;
@@ -165,6 +184,16 @@ if ! docker info >/dev/null 2>&1; then
     fi
 fi
 
+family_of_image() {
+    case "$1" in
+        debian:*|ubuntu:*)            printf 'debian' ;;
+        rockylinux:*|fedora:*|almalinux:*|centos:*) printf 'rhel' ;;
+        archlinux:*)                  printf 'arch' ;;
+        opensuse/*|opensuse:*)        printf 'suse' ;;
+        *)                            printf 'other' ;;
+    esac
+}
+
 platform_arch() {
     case "$1" in
         linux/amd64)  printf 'x86_64' ;;
@@ -185,7 +214,7 @@ if [ -n "$DISTRO" ]; then
         *)   die "镜像名要带标签，例如 debian:11（只写 debian 会拿到最新版，glibc 偏新）" ;;
     esac
     tarch="$(platform_arch "${PLATFORM:-linux/amd64}")"
-    TARGETS+=("${PLATFORM:-linux/amd64}|$DISTRO|$tarch|单发行版构建")
+    TARGETS+=("${PLATFORM:-linux/amd64}|$DISTRO|$tarch|手动指定的单个镜像")
 elif [ "$DRY_RUN" -eq 1 ]; then
     list_images
     printf '矩阵条目：\n'
@@ -194,6 +223,9 @@ elif [ "$DRY_RUN" -eq 1 ]; then
         plat="${line%%|*}"; rest="${line#*|}"; image="${rest%%|*}"; rest="${rest#*|}"
         arch="${rest%%|*}"; label="${rest#*|}"
         if [ -n "$ARCH_FILTER" ] && [ "$arch" != "$ARCH_FILTER" ]; then
+            continue
+        fi
+        if [ -n "$FAMILY_FILTER" ] && [ "$(family_of_image "$image")" != "$FAMILY_FILTER" ]; then
             continue
         fi
         printf '  %-14s %-13s %s\n' "$image" "$plat" "$label"
@@ -209,6 +241,9 @@ else
         plat="${line%%|*}"; rest="${line#*|}"; image="${rest%%|*}"; rest="${rest#*|}"
         arch="${rest%%|*}"; label="${rest#*|}"
         if [ -n "$ARCH_FILTER" ] && [ "$arch" != "$ARCH_FILTER" ]; then
+            continue
+        fi
+        if [ -n "$FAMILY_FILTER" ] && [ "$(family_of_image "$image")" != "$FAMILY_FILTER" ]; then
             continue
         fi
         if [ "$SKIP_EMULATED" -eq 1 ] && [ "$plat" != "linux/amd64" ]; then

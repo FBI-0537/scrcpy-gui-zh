@@ -1,22 +1,28 @@
 @echo off
 REM ===========================================================================
-REM  scrcpy 中文 GUI —— 在 Windows 上用 Docker 构建 Linux 全架构产物
+REM  scrcpy GUI (Chinese) - build Linux artifacts for ALL distro families
+REM                         and architectures, using Docker on Windows
 REM ---------------------------------------------------------------------------
-REM  这个包装脚本处理两个 Windows 老坑：
-REM    1) PowerShell 5.1 在没有 UTF-8 BOM 时按 ANSI 读 .ps1，中文会让它语法报错
-REM       → 检测并补回 BOM
-REM    2) 默认执行策略会拒绝运行未签名的 .ps1
-REM       → 用 -ExecutionPolicy Bypass
+REM  This wrapper handles two classic Windows traps:
+REM    1) PowerShell 5.1 reads a .ps1 file as ANSI when it has no UTF-8 BOM.
+REM       The .ps1 contains Chinese text, so a missing BOM breaks its syntax.
+REM       -> check for the BOM and restore it before running.
+REM    2) The default execution policy refuses to run unsigned .ps1 files.
+REM       -> pass -ExecutionPolicy Bypass
 REM
-REM  用法（参数与 .ps1 相同）：
-REM      build-windows-docker.cmd -List           只看构建计划
-REM      build-windows-docker.cmd                 构建默认矩阵（6 个目标）
-REM      build-windows-docker.cmd -Arch arm64     只做 arm64
+REM  NOTE: keep every line of THIS file ASCII-only. cmd.exe reads batch files
+REM  using the OEM code page, so UTF-8 Chinese here would be mis-decoded and
+REM  parts of it would even be executed as commands.
+REM
+REM  Usage (same arguments as the .ps1):
+REM      build-windows-docker.cmd -List                  show the plan only
+REM      build-windows-docker.cmd -Family debian         one distro family
+REM      build-windows-docker.cmd -Arch arm64            one architecture
+REM      build-windows-docker.cmd                        all families, all arches
 REM      build-windows-docker.cmd -Distro debian:11 -Arch x86_64
-REM      build-windows-docker.cmd -SkipEmulated   只做 x86_64（最快）
-REM      build-windows-docker.cmd -AllDistros     每个架构覆盖全部 glibc 档位
+REM      build-windows-docker.cmd -SkipEmulated          x86_64 only (fastest)
 REM
-REM  前置条件：Docker Desktop 已启动；建议给它 6GB 内存、20GB 磁盘。
+REM  Prerequisites: Docker Desktop running; 6 GB+ RAM, 20 GB+ disk for Docker.
 REM ===========================================================================
 
 setlocal

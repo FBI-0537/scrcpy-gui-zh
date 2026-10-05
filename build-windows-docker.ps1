@@ -53,6 +53,8 @@ param(
     [string]$Distro = '',
     [ValidateSet('', 'x86_64', 'arm64', 'armhf')]
     [string]$Arch = '',
+    [ValidateSet('', 'debian', 'rhel', 'arch', 'suse')]
+    [string]$Family = '',
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
@@ -67,33 +69,38 @@ if (-not $Proj) { $Proj = (Get-Location).Path }
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
 # ---------------------------------------------------------------------------
-# 矩阵
+# 矩阵：按「发行版家族 × 架构」组织
+#
+# 每个家族都选该家族**最老仍受支持的版本**作为基础镜像 —— 这样产物的
+# glibc 下限最低，覆盖该家族最广的老机器。注意 glibc 只能向后兼容：
+# 在某一族上构建的产物，在任何 glibc 不低于它的系统上都能跑（不分家族）。
+#
+# 各家族的 ARM 支持情况（这是镜像本身的限制，不是我们脚本的）：
+#   · Debian 系：amd64 / arm64 / arm/v7 三种都有
+#   · 红帽系：有 amd64 / arm64，**没有 32 位 ARM**（RHEL 早就砍掉了）
+#   · Arch 系：官方镜像**只有 x86_64**（Arch Linux ARM 是另一个项目，无官方镜像）
+#   · openSUSE 系：有 amd64 / arm64，无 32 位 ARM 官方镜像
 # ---------------------------------------------------------------------------
-$MatrixDefault = @(
-    @{ Image = 'debian:11';    Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 11（glibc 2.31）—— 兼容面最广，推荐发布' }
-    @{ Image = 'ubuntu:22.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 22.04（glibc 2.35）' }
-    @{ Image = 'ubuntu:24.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 24.04（glibc 2.39）' }
-    @{ Image = 'debian:12';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（glibc 2.36）—— 无线配对可用' }
-    @{ Image = 'debian:11';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 11 arm64（glibc 2.31）—— 兼容最老的 ARM，无无线配对' }
-    @{ Image = 'debian:12';    Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（glibc 2.36）—— 无线配对可用' }
+$Matrix = @(
+    # Debian 系（3 架构）—— debian:12 起 ARM 才拿得到 adb ≥ 30（无线配对）
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 12+ / Ubuntu 22.04+（glibc 2.36）' }
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（glibc 2.36，无线配对可用）' }
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（glibc 2.36，无线配对可用）' }
+    # Debian 系补充：极老系统兼容（glibc 2.31）
+    @{ Family = 'debian'; Image = 'debian:11'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 11+ / Ubuntu 20.04+（glibc 2.31，兼容最老）' }
+    # 红帽系（2 架构；无 32 位 ARM）
+    @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'RHEL 8+ / Rocky 8+ / CentOS 8+（glibc 2.28，红帽里兼容最广）' }
+    @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/arm64'; Arch = 'arm64';  Note = 'RHEL 8+ arm64（glibc 2.28）' }
+    # Arch 系（官方镜像只有 x86_64）
+    @{ Family = 'arch';   Image = 'archlinux:latest'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'Arch / Manjaro / EndeavourOS（滚动发行版，无旧版本概念）' }
+    # openSUSE 系（2 架构）
+    @{ Family = 'suse';   Image = 'opensuse/leap:15.5'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'openSUSE Leap 15.5+（glibc 2.31）' }
+    @{ Family = 'suse';   Image = 'opensuse/leap:15.5'; Plat = 'linux/arm64'; Arch = 'arm64';  Note = 'openSUSE Leap 15.5+ arm64' }
 )
 
-$MatrixAll = @(
-    @{ Image = 'debian:11';    Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 11（glibc 2.31）' }
-    @{ Image = 'debian:12';    Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 12（glibc 2.36）' }
-    @{ Image = 'debian:13';    Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 13（glibc 2.41）' }
-    @{ Image = 'ubuntu:20.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 20.04（glibc 2.31）' }
-    @{ Image = 'ubuntu:22.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 22.04（glibc 2.35）' }
-    @{ Image = 'ubuntu:24.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 24.04（glibc 2.39）' }
-    @{ Image = 'debian:11';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 11 arm64（glibc 2.31）' }
-    @{ Image = 'debian:12';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（glibc 2.36）' }
-    @{ Image = 'ubuntu:22.04'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Ubuntu 22.04 arm64（glibc 2.35）' }
-    @{ Image = 'ubuntu:24.04'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Ubuntu 24.04 arm64（glibc 2.39）' }
-    @{ Image = 'debian:11';    Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 11 armhf（glibc 2.31）' }
-    @{ Image = 'debian:12';    Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（glibc 2.36）' }
-)
-
-$Matrix = if ($AllDistros) { $MatrixAll } else { $MatrixDefault }
+# 非 Debian 系的镜像里没有现成的 Debian 包可用（glibc 不匹配），
+# scrcpy 基本只能源码编译，所以这些家族自动带上 --auto-scrcpy。
+$FamiliesNeedCompile = @('rhel', 'arch', 'suse')
 
 # ---------------------------------------------------------------------------
 # 组装目标
@@ -102,29 +109,34 @@ $Targets = @()
 if ($Distro) {
     if ($Distro -notmatch ':') { throw "镜像名要带标签，例如 debian:11（只写 debian 会拿到最新版，glibc 偏新）" }
     $plat = switch ($Arch) { 'arm64' { 'linux/arm64' } 'armhf' { 'linux/arm/v7' } default { 'linux/amd64' } }
-    $Targets += @{ Image = $Distro; Plat = $plat; Arch = $(if ($Arch) { $Arch } else { 'x86_64' }); Note = '单发行版构建' }
+    $Targets += @{ Family = 'custom'; Image = $Distro; Plat = $plat; Arch = $(if ($Arch) { $Arch } else { 'x86_64' }); Note = '手动指定的单个镜像' }
 }
 else {
     foreach ($t in $Matrix) {
+        if ($Family -and $t.Family -ne $Family) { continue }
         if ($Arch -and $t.Arch -ne $Arch) { continue }
         if ($SkipEmulated -and $t.Plat -ne 'linux/amd64') { continue }
         $Targets += $t
     }
 }
 
-if ($Targets.Count -eq 0) { throw "没有匹配的目标（-Arch $Arch？可用值：x86_64 / arm64 / armhf）" }
+if ($Targets.Count -eq 0) {
+    throw "没有匹配的目标（-Family $Family / -Arch $Arch）。可用家族：debian / rhel / arch / suse；可用架构：x86_64 / arm64 / armhf"
+}
 
 Say ""
 Say "==> 构建计划（$($Targets.Count) 个目标）" Cyan
 $i = 0
 foreach ($t in $Targets) {
     $i++
-    Say ("  {0,2}) {1,-14} {2,-14} {3}" -f $i, $t.Image, $t.Plat, $t.Note)
+    Say ("  {0,2}) [{1,-6}] {2,-20} {3,-14} {4}" -f $i, $t.Family, $t.Image, $t.Plat, $t.Note)
 }
 Say ""
 Say "产物目录：$Proj\dist" Gray
 Say "产物形态：单个可执行文件（依赖与软件全部打包在里面）" Gray
 Say "时间预期：x86_64 每个 3-6 分钟；arm64 / armhf 每个 15-60 分钟" Yellow
+Say "重要：glibc 只能向后兼容 —— 在某个家族上构建的产物，在任何 glibc 不低于它的" Yellow
+Say "      系统上都能跑（不分家族）。所以 Debian 11 那份其实也能跑 Fedora/Arch。" Yellow
 
 if ($List) {
     Say ""
@@ -155,21 +167,39 @@ if (-not (Test-Path "$Proj\build-linux.sh")) { throw "找不到 $Proj\build-linu
 New-Item -ItemType Directory -Force -Path "$Proj\dist" | Out-Null
 
 # ---------------------------------------------------------------------------
-# 挂载自检（中文路径有时会出问题）
+# 挂载自检
+# 注意：docker 会把「正在拉镜像 / 拉取进度」写到 stderr，直接用 2>&1 捕获会混进来，
+# 所以这里只从输出里挑「纯数字行」来判断，不能要求整段输出就是一个数字。
 # ---------------------------------------------------------------------------
 Say ""
 Say "==> 检查挂载是否正常" Cyan
-$probe = & docker run --rm -v "${Proj}:/src" debian:11 sh -c 'ls /src | wc -l' 2>&1
-$probeText = ($probe | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or -not ($probeText -match '^\d+$') -or [int]$probeText -lt 3) {
-    Say "  [失败] 容器里看不到项目文件（读到 $probeText 个条目）" Red
-    Say "  多半是路径含中文导致挂载异常。把项目复制到纯英文路径再跑：" Yellow
-    Say "      robocopy `"$Proj`" C:\build\scrcpy-gui-zh /E" Gray
-    Say "      cd C:\build\scrcpy-gui-zh" Gray
-    Say "      .\build-windows-docker.ps1" Gray
+
+function Get-ProbeCount {
+    param([string[]]$DockerRunArgs)
+    $raw = & docker run --rm @DockerRunArgs debian:12 sh -c 'ls /src 2>/dev/null | wc -l' 2>&1
+    $nums = @($raw | ForEach-Object { "$_" } | Where-Object { $_ -match '^\s*\d+\s*$' })
+    if ($nums.Count -gt 0) { return [int]$nums[-1].Trim() }
+    return -1
+}
+
+$MountStyle = 'v'      # 'v' = -v "path:/src"，'mount' = --mount type=bind,...
+$probeCount = Get-ProbeCount @('-v', "${Proj}:/src")
+if ($probeCount -lt 3) {
+    Say "  -v 挂载只读到 $probeCount 个条目，改用 --mount 写法再试一次…" Yellow
+    $probeCount = Get-ProbeCount @('--mount', "type=bind,source=${Proj},target=/src")
+    if ($probeCount -ge 3) { $MountStyle = 'mount' }
+}
+if ($probeCount -lt 3) {
+    Say "  [失败] 容器里看不到项目文件（读到 $probeCount 个条目）" Red
+    Say "  两种挂载写法都试过了。可能原因：" Yellow
+    Say "    · 项目所在磁盘没有共享给 Docker Desktop（Settings → Resources → File sharing）" Yellow
+    Say "    · 路径含中文/空格导致挂载异常 → 复制到纯英文路径再跑：" Gray
+    Say "        robocopy `"$Proj`" C:\build\scrcpy-gui-zh /E" Gray
+    Say "        cd C:\build\scrcpy-gui-zh" Gray
+    Say "        .\build-windows-docker.ps1" Gray
     throw "挂载自检未通过"
 }
-Say "  [OK] 容器里能看到 /src（$probeText 个条目）"
+Say "  [OK] 容器里能看到 /src（$probeCount 个条目，挂载方式：$MountStyle）"
 
 # ---------------------------------------------------------------------------
 # 逐个构建
@@ -202,11 +232,26 @@ foreach ($t in $Targets) {
     # 非 x86_64 上 Google 不提供 platform-tools：脚本会从 Debian/Ubuntu 归档取本架构
     # 的 adb（debian:12 能拿到 34.0.5 → 无线配对可用；debian:11 拿不到）。
     # --allow-old-adb 让「拿不到时」继续构建而不是中止。
-    # 加上这个开关让构建继续（代价：该架构产物没有无线配对功能）
     $inner = './build-linux.sh --yes'
     if ($t.Arch -in @('arm64', 'armhf')) { $inner += ' --allow-old-adb' }
 
-    & docker run --rm --platform $t.Plat -v "${Proj}:/src" -w /src $t.Image bash -c $inner
+    # 红帽 / Arch / openSUSE 里没有 Debian 系现成包可用（glibc 不匹配），
+    # scrcpy 只能源码编译 —— 自动带上 --auto-scrcpy，否则会因为找不到 scrcpy 而中止
+    if ($FamiliesNeedCompile -contains $t.Family) {
+        $inner += ' --auto-scrcpy'
+        Say "  （该家族需要源码编译 scrcpy，已自动加 --auto-scrcpy，会更慢）" DarkGray
+    }
+
+    $runArgs = @('run', '--rm', '--platform', $t.Plat)
+    if ($MountStyle -eq 'mount') {
+        $runArgs += @('--mount', "type=bind,source=${Proj},target=/src")
+    }
+    else {
+        $runArgs += @('-v', "${Proj}:/src")
+    }
+    $runArgs += @('-w', '/src', $t.Image, 'bash', '-c', $inner)
+
+    & docker @runArgs
     if ($LASTEXITCODE -eq 0) {
         Say "  [完成] $($t.Image) $($t.Plat)" Green
         $Done += "$($t.Image) $($t.Plat)"

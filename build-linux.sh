@@ -534,6 +534,15 @@ if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
     fi
 fi
 if [ -z "$ADB_BIN" ]; then
+    # 有些发行版根本不打包 adb（RHEL 系 / Arch 系常见），这时从 Debian/Ubuntu
+    # 归档取本架构的 adb —— 它自带的依赖很少，多数 glibc 系统都能跑
+    warn "系统里没有 adb（RHEL / Arch 等发行版常常不打包它）"
+    info "尝试从 Debian/Ubuntu 归档取本架构的 adb…"
+    if download_prebuilt_adb "$SCRIPT_DIR/vendor/platform-tools"; then
+        ADB_BIN="$SCRIPT_DIR/vendor/platform-tools/adb"
+    fi
+fi
+if [ -z "$ADB_BIN" ]; then
     die "仍然找不到 adb。可手动指定：ADB_BIN=/usr/bin/adb ./build-linux.sh"
 fi
 

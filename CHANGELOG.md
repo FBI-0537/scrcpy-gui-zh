@@ -1,3 +1,25 @@
+### 修复
+- **`build-windows-docker.cmd` 里的中文注释把批处理本身弄坏了**：cmd.exe 按 OEM 代码页
+  （GBK）读批处理，UTF-8 的中文被解码成乱码，其中一段甚至被当成命令执行
+  （报 `'鍦ㄦ病鏈?UTF-8' 不是内部或外部命令`）。该文件改为**全 ASCII**，
+  说明文字保留在带 BOM 的 .ps1 里。
+- **挂载自检误报**：docker 会把「正在拉镜像 / 拉取进度」写到 stderr，原来用
+  `2>&1` 捕获后要求整段输出是一个数字，必然失败（实际读到 17 个条目也被判失败）。
+  现在只从输出里挑「纯数字行」判断；并增加 `--mount type=bind` 兜底写法。
+- **构建脚本：按发行版家族组织矩阵**（用户要求 Debian 系 / 红帽系 / Arch 系等
+  各自的三种架构版本）：
+  | 家族 | 基础镜像 | 架构 | 说明 |
+  |---|---|---|---|
+  | Debian 系 | debian:12 | amd64 / arm64 / arm/v7 | ARM 上无线配对可用 |
+  | Debian 系 | debian:11 | amd64 | glibc 2.31，兼容最老 |
+  | 红帽系 | rockylinux:8 | amd64 / arm64 | glibc 2.28；**RHEL 没有 32 位 ARM** |
+  | Arch 系 | archlinux:latest | amd64 | **官方镜像只有 x86_64** |
+  | openSUSE 系 | opensuse/leap:15.5 | amd64 / arm64 | 无 32 位 ARM 官方镜像 |
+  新增 `-Family` / `--family` 过滤；非 Debian 系自动加 `--auto-scrcpy`
+  （那些家族没有现成的 Debian 包可用，scrcpy 只能源码编译）。
+- **发行版不打包 adb 时也能构建**：RHEL / Arch 系常常不提供 adb 包，原来直接
+  报「仍然找不到 adb」中止；现在会先尝试从 Debian/Ubuntu 归档取本架构的 adb。
+
 # 版本记录
 
 ## 1.0.0
