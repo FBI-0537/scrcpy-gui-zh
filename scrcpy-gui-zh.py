@@ -316,21 +316,46 @@ def adb_mdns_supported():
     return rc == 0 or "mdns" in text
 
 
-def adb_too_old_hint():
+def adb_platform_tools_version():
+    """platform-tools 主版本号，例如 28 或 35；取不到返回 None。"""
+    text = adb_version_text().strip()
+    head = text.split("-")[0].split(".")[0]
+    try:
+        return int(head)
+    except ValueError:
+        return None
+
+
+def adb_wireless_ok():
+    """adb 是否支持无线调试相关命令。
+
+    `adb pair`（方式二/方式三配对）与 `adb mdns`（自动发现）都是
+    platform-tools 30（2020）才加入的；老版本会报 unknown command。
+    """
+    ver = adb_platform_tools_version()
+    if ver is not None:
+        return ver >= 30
+    return adb_mdns_supported()      # 版本号解析不出来就实测一次
+
+
+def adb_too_old_hint(feature="无线调试"):
     """adb 过旧时的解决指引（纯文本）。"""
     return (
         "当前 adb 版本：%s\n"
-        "（adb mdns 需要 platform-tools ≥ 30，2020 年才有）\n\n"
-        "这会导致：二维码配对、自动发现设备、自动发现配对端口 全部不可用。\n"
-        "「方式二：配对码」不受影响，不依赖 mdns，现在就能用。\n\n"
-        "想恢复 mdns 功能 —— 下载官方 platform-tools 放进项目 vendor/ 目录，\n"
-        "程序会自动优先使用它（重新构建产物即可打进包里）：\n\n"
-        "    cd 项目目录\n"
-        "    wget %s\n"
-        "    unzip platform-tools-latest-linux.zip -d vendor/\n"
-        "    ./build-linux.sh --clean      # 重新打包，之后产物自带新 adb\n\n"
-        "系统 adb 若也能升级（snap 或发行版源），同样可以。"
-        % (adb_version_text(), PLATFORM_TOOLS_URL))
+        "（无线调试用的 adb pair / adb mdns 需要 platform-tools ≥ 30，2020 年才有）\n\n"
+        "受影响：%s、二维码配对、自动发现设备与端口\n"
+        "不受影响：USB 直连；以及「方式一：USB 转无线」\n"
+        "          （adb tcpip / adb connect 老版本就有，现在就能用）\n\n"
+        "想恢复无线配对的两种办法：\n\n"
+        "  1) 重新构建产物 —— 构建脚本会自动下载官方 platform-tools：\n"
+        "         ./build-linux.sh --clean\n"
+        "     也可手动放进项目：\n"
+        "         wget %s\n"
+        "         python3 -m zipfile -e platform-tools-latest-linux.zip vendor/\n"
+        "     之后程序会自动优先使用 vendor/platform-tools/adb\n\n"
+        "  2) 现在就想无线 —— 用「方式一：USB 转无线」：\n"
+        "         插着数据线 → 点「启用无线端口」→ 拔线 → 点「连接」"
+        % (adb_version_text(), feature, PLATFORM_TOOLS_URL))
 
 
 # ------------------------------------------------------------------
@@ -1318,10 +1343,10 @@ class ScrcpyGui:
         if not adb_mdns_supported():
             self.log("！ 根因找到了：当前 adb 不支持 mdns 子命令（版本 %s）" % adb_version_text())
             self.log("！ 这不是网络/防火墙问题，是 adb 版本太旧，换网络也没用。")
-            for line in adb_too_old_hint().splitlines():
+            for line in adb_too_old_hint("二维码配对与自动发现").splitlines():
                 self.log("！ " + line if line.strip() else "！")
             self.log("=" * 46)
-            messagebox.showwarning(APP_TITLE, adb_too_old_hint())
+            messagebox.showwarning(APP_TITLE, adb_too_old_hint("二维码配对与自动发现"))
             return
         _rc, out = run([ADB, "mdns", "check"], timeout=20)
         self.log("$ adb mdns check")
@@ -1388,7 +1413,8 @@ class ScrcpyGui:
             return
         if not self._require_mdns():
             self.notebook.select(self.tab_wifi)
-            self.log("提示：改用「方式二：配对码配对」—— 它不依赖 mdns，现在就能用。")
+            self.log("提示：二维码走不通时，可改用「方式一：USB 转无线」")
+            self.log("      （插线 → 启用无线端口 → 拔线 → 连接），它不依赖 mdns。")
             return
 
         service = "scrcpygui-" + secrets.token_hex(6)
@@ -1525,7 +1551,10 @@ class ScrcpyGui:
             self.log("！ 连接失败。检查手机与电脑是否同一局域网、是否被 AP 隔离。")
 
     def wifi_pair(self):
-        if not self._need_adb():
+        if not self._require_wireless_adb("方式二：配对码配对"):
+            self.notebook.select(self.tab_wifi)
+            self.log("提示：现在就想无线，用「方式一：USB 转无线」——")
+            self.log("      插着数据线 → 点「启用无线端口」→ 拔线 → 点「连接」。")
             return
         ip = self.var_pip.get().strip() or self.var_ip.get().strip()
         pport = self.var_pport.get().strip()
@@ -1553,18 +1582,34 @@ class ScrcpyGui:
 
     # ---------- 关闭 ----------
 
-    # ---------- adb mdns 能力检查 ----------
+    # ---------- adb 能力检查（无线调试相关命令要 platform-tools >= 30）----------
+
+    def _require_wireless_adb(self, feature):
+        """做无线配对/发现之前先确认 adb 够新，避免傻等或报一堆无关错误。
+
+        need_mdns=True 时额外要求 mdns 子命令（自动发现用）。
+        """
+        if not self._need_adb():
+            return False
+        if adb_wireless_ok():
+            return True
+        hint = adb_too_old_hint(feature)
+        self.log("！ 当前 adb 太旧，不支持无线配对（版本 %s）" % adb_version_text())
+        self.log("！ 需要 platform-tools ≥ 30；你这版是 %s" % adb_version_text())
+        for line in hint.splitlines():
+            self.log("！ " + line if line.strip() else "！")
+        messagebox.showwarning(APP_TITLE, hint)
+        return False
 
     def _require_mdns(self):
-        """二维码配对 / 自动发现前先确认 adb 支持 mdns，避免傻等 120 秒。"""
-        if not self._need_adb():
+        """自动发现/二维码配对前确认 mdns 子命令可用。"""
+        if not self._require_wireless_adb("二维码配对与自动发现"):
             return False
         if adb_mdns_supported():
             return True
-        hint = adb_too_old_hint()
+        hint = adb_too_old_hint("二维码配对与自动发现")
         self.log("！ 当前 adb 不支持 mdns 子命令（版本 %s）" % adb_version_text())
-        for line in hint.splitlines():
-            self.log("！ " + line if line.strip() else "！")
+        self.log("！ 二维码配对与自动发现会不可用；方式一（USB 转无线）不受影响。")
         messagebox.showwarning(APP_TITLE, hint)
         return False
 

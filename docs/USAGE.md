@@ -42,7 +42,12 @@
 排查顺序：`adb devices` 空 → 数据线/USB 口/驱动；`no permissions` → udev 规则；
 `unauthorized` → 手机上的授权弹窗。
 
-### 2.2 无线 · 配对码（兼容性最好，不依赖 mDNS）
+### 2.2 无线 · 配对码（不依赖 mDNS）
+
+> ⚠️ **前提**：`adb pair` 是 platform-tools 30（2020）才有的命令。老发行版源里的
+> adb（如 Ubuntu 22.04 的 28.0.2）会报 `adb: unknown command pair`。
+> 这种情况请先升级 adb（构建脚本会自动取官方 platform-tools），
+> 或改用 **2.4 的「USB 转无线」**（`adb tcpip` / `adb connect` 老版本就有）。
 
 **手机端**：开发者选项 → 无线调试 → **使用配对码配对设备**
 
