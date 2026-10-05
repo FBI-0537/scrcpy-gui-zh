@@ -482,11 +482,25 @@ VPY="$BUILD_ROOT/venv/bin/python"
 PYI_VER="$("$VPY" -m PyInstaller --version 2>/dev/null || true)"
 if [ -z "$PYI_VER" ] || ! ver_ge "$PYI_VER" "$MIN_PYINSTALLER"; then
     info "安装/升级 PyInstaller（当前 ${PYI_VER:-未安装}，要求 ≥ $MIN_PYINSTALLER）…"
-    "$VPY" -m pip install --quiet --upgrade pyinstaller \
-        || die "PyInstaller 安装失败，请检查网络与系统代理设置"
+    # 不吞输出：pip 的报错一定要看得见（之前用 --quiet + 2>/dev/null，
+    # 失败时只留下一句「版本未知」，完全无从排查）
+    if ! "$VPY" -m pip install --upgrade pyinstaller; then
+        PIP_FALLBACK="${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}"
+        warn "默认 PyPI 源安装失败（国内常见：pypi.org 被代理的 fake-IP 卡住）"
+        warn "改用国内镜像重试：$PIP_FALLBACK"
+        "$VPY" -m pip install --upgrade \
+            -i "$PIP_FALLBACK" \
+            --trusted-host "$(printf '%s' "$PIP_FALLBACK" | sed -e 's|^https\?://||' -e 's|/.*$||')" \
+            pyinstaller \
+            || die "PyInstaller 安装失败。可手动指定镜像后重试：
+     -PipMirror http://mirrors.aliyun.com/pypi/simple/（Windows 运行器）
+     或容器内：PIP_INDEX_URL=<镜像> ./build-linux.sh"
+    fi
     PYI_VER="$("$VPY" -m PyInstaller --version 2>/dev/null || true)"
 fi
 if [ -z "$PYI_VER" ] || ! ver_ge "$PYI_VER" "$MIN_PYINSTALLER"; then
+    err "PyInstaller 装上了但跑不起来，真实报错如下："
+    "$VPY" -m PyInstaller --version 2>&1 | tail -5 || true
     die "PyInstaller 版本仍不满足要求（${PYI_VER:-未知} < $MIN_PYINSTALLER）"
 fi
 chk_ok "PyInstaller" "$PYI_VER（要求 ≥ $MIN_PYINSTALLER）"
@@ -494,7 +508,12 @@ chk_ok "PyInstaller" "$PYI_VER（要求 ≥ $MIN_PYINSTALLER）"
 # 二维码渲染库：装不上也能跑，程序会退化成剪贴板提示
 if ! "$VPY" -c 'import segno' >/dev/null 2>&1; then
     info "安装二维码库 segno…"
-    "$VPY" -m pip install --quiet segno || warn "segno 安装失败，二维码将用备用方案"
+    "$VPY" -m pip install --quiet segno \
+        || "$VPY" -m pip install --quiet \
+               -i "${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}" \
+               --trusted-host "$(printf '%s' "${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}" | sed -e 's|^https\?://||' -e 's|/.*$||')" \
+               segno \
+        || warn "segno 安装失败，二维码将用备用方案"
 fi
 if "$VPY" -c 'import segno' >/dev/null 2>&1; then
     chk_ok "segno" "$("$VPY" -c 'import segno;print(getattr(segno,"__version__","?"))' 2>/dev/null)"
