@@ -41,6 +41,12 @@ die()  { err "$*"; exit 1; }
 step() { printf '\n%s==> %s%s\n' "$BOLD" "$*" "$NC"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 发行版适配层（apt / dnf / pacman / zypper / apk）
+# shellcheck source=build-common.sh
+. "$SCRIPT_DIR/build-common.sh"
+detect_distro
+
 GUI_PY="$SCRIPT_DIR/scrcpy-gui-zh.py"
 UDEV_SRC="$SCRIPT_DIR/install-udev.sh"
 BUILD_ROOT="$SCRIPT_DIR/build-linux"
@@ -92,33 +98,31 @@ done
 # ---------------------------------------------------------------------------
 # 通用小工具
 # ---------------------------------------------------------------------------
-apt_install() {
-    local SUDO=""
-    if [ "$(id -u)" -ne 0 ]; then
-        if command -v sudo >/dev/null 2>&1; then
-            SUDO="sudo"
-        else
-            return 1
-        fi
-    fi
-    if $SUDO apt-get install -y "$@"; then
-        return 0
-    fi
-    warn "直接安装失败，先更新软件源再重试…"
-    $SUDO apt-get update || return 1
-    $SUDO apt-get install -y "$@"
-}
+# 安装实际包名（发行版适配在 build-common.sh 里）
+apt_install() { pkg_install "$@"; }
 
-apt_install_optional() {
-    local pkg
-    for pkg in "$@"; do
-        if command -v dpkg >/dev/null 2>&1 && dpkg -s "$pkg" >/dev/null 2>&1; then
+# 逐个安装逻辑依赖键：已经装好的跳过，装不上或本发行版没有的只警告
+install_keys_optional() {
+    local key names=() n installed
+    for key in "$@"; do
+        mapfile -t names < <(pkg_names "$key")
+        if [ "${#names[@]}" -eq 0 ]; then
+            warn "  未识别的依赖键：$key（跳过）"
             continue
         fi
-        if apt_install "$pkg" >/dev/null 2>&1; then
-            info "  已安装 $pkg"
+        installed=1
+        for n in "${names[@]}"; do
+            if ! pkg_is_installed "$n"; then
+                installed=0
+            fi
+        done
+        if [ "$installed" -eq 1 ]; then
+            continue
+        fi
+        if pkg_install "${names[@]}" >/dev/null 2>&1; then
+            info "  已安装 $key（${names[*]}）"
         else
-            warn "  装不上 $pkg（这个发行版可能没有），继续"
+            warn "  装不上 $key（${names[*]}），继续"
         fi
     done
 }
@@ -182,13 +186,12 @@ build_scrcpy_from_source() {
     info "目标版本：v$ver"
 
     info "安装编译依赖（已有的会跳过）…"
-    apt_install_optional meson ninja-build pkg-config cmake gcc g++ make tar \
-        libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
-        libusb-1.0-0-dev
+    install_keys_optional meson ninja pkgconfig cmake gcc gxx make tar \
+        ffmpeg-dev libusb-dev
 
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "系统里没有 SDL3，先尝试发行版包…"
-        apt_install_optional libsdl3-dev
+        install_keys_optional sdl3-dev
     fi
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "发行版没有 SDL3（老发行版常见），改为自行编译到 vendor/sdl3"
@@ -261,28 +264,55 @@ case "$(uname -m)" in
     aarch64|arm64)  ARCH_TAG="aarch64"; MULTIARCH="aarch64-linux-gnu" ;;
     *) die "不支持的架构：$(uname -m)（只支持 x86_64 与 aarch64）" ;;
 esac
-info "目标架构：$ARCH_TAG    glibc：$(ldd --version | head -1 | awk '{print $NF}')"
+info "发行版  ：$DISTRO_NAME（$(distro_family_zh)）"
+info "目标架构：$ARCH_TAG    libc：$(libc_flavor) $(ldd --version 2>&1 | head -1 | awk '{print $NF}')"
+if [ "$DISTRO_FAMILY" = "alpine" ]; then
+    warn "Alpine 用 musl libc，PyInstaller 打包兼容性差，建议在 glibc 发行版上构建"
+fi
+if [ "$DISTRO_FAMILY" = "unknown" ]; then
+    warn "未识别的发行版家族，无法自动安装依赖。请手动准备："
+    warn "  python3 + tkinter、ldd、curl、file、scrcpy、adb"
+fi
 
 MISSING_PKGS=()
 MISSING_DESC=()
 
+# 下面两个 helper 收集「逻辑依赖键」，由 build-common.sh 映射成本发行版的包名
 need_cmd() {
-    local cmd="$1" pkg="$2" why="$3"
+    local cmd="$1" key="$2" why="$3"
     if command -v "$cmd" >/dev/null 2>&1; then
         return 0
     fi
-    MISSING_PKGS+=("$pkg")
-    MISSING_DESC+=("命令 $cmd —— $why（包：$pkg）")
+    MISSING_PKGS+=("$key")
+    MISSING_DESC+=("命令 $cmd —— $why")
 }
 
 need_py() {
-    local mod="$1" pkg="$2" why="$3"
+    local mod="$1" key="$2" why="$3"
     if command -v python3 >/dev/null 2>&1 \
        && python3 -c "import $mod" >/dev/null 2>&1; then
         return 0
     fi
-    MISSING_PKGS+=("$pkg")
-    MISSING_DESC+=("python3 模块 $mod —— $why（包：$pkg）")
+    MISSING_PKGS+=("$key")
+    MISSING_DESC+=("python3 模块 $mod —— $why")
+}
+
+# 按当前发行版给出可直接粘贴的手动安装命令
+manual_install_hint() {
+    local names
+    names="$(pkg_hint "$@")"
+    if [ -z "$names" ]; then
+        printf '（无法映射到本发行版的包名，请手动查找）'
+        return
+    fi
+    case "$DISTRO_FAMILY" in
+        debian) printf 'sudo apt-get install -y %s' "$names" ;;
+        rhel)   printf 'sudo dnf install -y %s' "$names" ;;
+        arch)   printf 'sudo pacman -S --needed %s' "$names" ;;
+        suse)   printf 'sudo zypper install %s' "$names" ;;
+        alpine) printf 'sudo apk add %s' "$names" ;;
+        *)      printf '请手动安装：%s' "$names" ;;
+    esac
 }
 
 ensure_deps() {
@@ -291,25 +321,25 @@ ensure_deps() {
     fi
     mapfile -t MISSING_PKGS < <(printf '%s\n' "${MISSING_PKGS[@]}" | sort -u)
 
-    warn "检测到缺少以下依赖："
+    warn "检测到缺少以下依赖（发行版：$(distro_family_zh)）："
     local d
     for d in "${MISSING_DESC[@]}"; do
         warn "  · $d"
     done
-    warn "需要安装的包：${MISSING_PKGS[*]}"
+    warn "将安装：$(pkg_hint "${MISSING_PKGS[@]}")"
 
     if [ "$AUTO_INSTALL" -eq 0 ]; then
         die "已指定 --no-install。请手动安装后重试：
-     sudo apt-get install -y ${MISSING_PKGS[*]}"
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
     fi
     if [ "$(id -u)" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
         die "当前不是 root 且没有 sudo。请以 root 执行：
-     apt-get install -y ${MISSING_PKGS[*]}"
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
     fi
     if [ "$ASSUME_YES" -eq 0 ]; then
         if [ ! -t 0 ]; then
             die "非交互环境，未自动安装。请手动执行：
-     sudo apt-get install -y ${MISSING_PKGS[*]}"
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
         fi
         printf '%s[询问]%s 是否现在自动安装这些包？（需要管理员权限）[Y/n] ' "$YELLOW" "$NC"
         local ans=""
@@ -317,24 +347,27 @@ ensure_deps() {
         case "$ans" in
             n|N|no|NO|No)
                 die "已取消。手动安装命令：
-     sudo apt-get install -y ${MISSING_PKGS[*]}" ;;
+     $(manual_install_hint "${MISSING_PKGS[@]}")" ;;
         esac
     fi
-    info "正在安装：${MISSING_PKGS[*]}"
-    apt_install "${MISSING_PKGS[@]}" || die "安装失败：${MISSING_PKGS[*]}"
+    info "正在安装：$(pkg_hint "${MISSING_PKGS[@]}")"
+    if ! install_keys "${MISSING_PKGS[@]}"; then
+        die "安装失败。请手动执行：
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
+    fi
     info "依赖安装完成"
 }
 
 collect_missing() {
     MISSING_PKGS=()
     MISSING_DESC=()
-    need_cmd python3  python3      "运行与打包"
-    need_py  tkinter  python3-tk   "图形界面"
-    need_py  venv     python3-venv "创建构建虚拟环境"
-    need_cmd ldd      libc-bin     "收集依赖库"
-    need_cmd curl     curl         "下载依赖"
-    need_cmd file     file         "校验产物"
-    need_cmd stat     coreutils    "读取文件大小"
+    need_cmd python3  python3   "运行与打包"
+    need_py  tkinter  tkinter   "图形界面"
+    need_py  venv     venv      "创建构建虚拟环境"
+    need_cmd ldd      ldd       "收集依赖库"
+    need_cmd curl     curl      "下载依赖"
+    need_cmd file     file      "校验产物"
+    need_cmd stat     coreutils "读取文件大小"
 }
 
 collect_missing
@@ -423,8 +456,8 @@ if [ -z "$SERVER_SRC" ]; then
         fi
     done
 fi
-if [ -z "$SERVER_SRC" ] && command -v dpkg >/dev/null 2>&1; then
-    SERVER_SRC="$(dpkg -L scrcpy 2>/dev/null | grep -m1 'scrcpy-server$' || true)"
+if [ -z "$SERVER_SRC" ]; then
+    SERVER_SRC="$(pkg_files scrcpy | grep -m1 'scrcpy-server$' || true)"
 fi
 if [ -n "$SERVER_SRC" ] && [ ! -f "$SERVER_SRC" ]; then
     SERVER_SRC=""

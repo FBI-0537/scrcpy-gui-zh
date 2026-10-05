@@ -90,35 +90,31 @@ host_fuse_pkg() {
     esac
 }
 
-# 统一的 apt 安装入口：自动判断 sudo，失败时补一次 apt-get update 再重试
-apt_install() {
-    local SUDO=""
-    if [ "$(id -u)" -ne 0 ]; then
-        if command -v sudo >/dev/null 2>&1; then
-            SUDO="sudo"
-        else
-            return 1
-        fi
-    fi
-    if $SUDO apt-get install -y "$@"; then
-        return 0
-    fi
-    warn "直接安装失败，先更新软件源再重试…"
-    $SUDO apt-get update || return 1
-    $SUDO apt-get install -y "$@"
-}
+# 安装实际包名（发行版适配在 build-common.sh 里：apt / dnf / pacman / zypper / apk）
+apt_install() { pkg_install "$@"; }
 
-# 逐个安装一组包：apt 是"全成功或全失败"，一个个来更稳，装不上的只警告
-apt_install_optional() {
-    local pkg
-    for pkg in "$@"; do
-        if command -v dpkg >/dev/null 2>&1 && dpkg -s "$pkg" >/dev/null 2>&1; then
+# 逐个安装逻辑依赖键：已经装好的跳过，装不上或本发行版没有的只警告
+install_keys_optional() {
+    local key names=() n installed
+    for key in "$@"; do
+        mapfile -t names < <(pkg_names "$key")
+        if [ "${#names[@]}" -eq 0 ]; then
+            warn "  未识别的依赖键：$key（跳过）"
             continue
         fi
-        if apt_install "$pkg" >/dev/null 2>&1; then
-            info "  已安装 $pkg"
+        installed=1
+        for n in "${names[@]}"; do
+            if ! pkg_is_installed "$n"; then
+                installed=0
+            fi
+        done
+        if [ "$installed" -eq 1 ]; then
+            continue
+        fi
+        if pkg_install "${names[@]}" >/dev/null 2>&1; then
+            info "  已安装 $key（${names[*]}）"
         else
-            warn "  装不上 $pkg（这个发行版可能没有），继续"
+            warn "  装不上 $key（${names[*]}），继续"
         fi
     done
 }
@@ -174,14 +170,13 @@ build_scrcpy_from_source() {
     info "目标版本：v$ver"
 
     info "安装编译依赖（已有的会跳过）…"
-    apt_install_optional meson ninja-build pkg-config cmake gcc g++ make tar \
-        libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
-        libusb-1.0-0-dev
+    install_keys_optional meson ninja pkgconfig cmake gcc gxx make tar \
+        ffmpeg-dev libusb-dev
 
     # SDL3：先试发行版包，装不上就自己编到 vendor/sdl3（老发行版走这条路）
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "系统里没有 SDL3，先尝试发行版包…"
-        apt_install_optional libsdl3-dev
+        install_keys_optional sdl3-dev
     fi
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "发行版没有 SDL3（Ubuntu 22.04 等老版本常见），改为自行编译到 vendor/sdl3"
@@ -247,6 +242,12 @@ build_scrcpy_from_source() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 发行版适配层（apt / dnf / pacman / zypper / apk）
+# shellcheck source=build-common.sh
+. "$SCRIPT_DIR/build-common.sh"
+detect_distro
+
 GUI_PY="$SCRIPT_DIR/scrcpy-gui-zh.py"
 ICON_SRC="$SCRIPT_DIR/assets/scrcpy-gui-zh.png"
 UDEV_SRC="$SCRIPT_DIR/install-udev.sh"
@@ -328,44 +329,44 @@ collect_missing() {
         MISSING_DESC+=("python3 模块 $mod —— $why（包：$pkg）")
     }
 
-    need_cmd python3  python3      "运行与打包"
-    need_py  tkinter  python3-tk   "图形界面"
-    need_py  venv     python3-venv "创建构建虚拟环境"
-    need_cmd ldd      libc-bin     "收集依赖库"
-    need_cmd curl     curl         "下载 appimagetool"
-    need_cmd file     file         "识别产物架构"
-    need_cmd stat     coreutils    "读取文件大小"
-    need_cmd readlink coreutils    "AppRun 解析自身路径"
+    need_cmd python3  python3   "运行与打包"
+    need_py  tkinter  tkinter   "图形界面"
+    need_py  venv     venv      "创建构建虚拟环境"
+    need_cmd ldd      ldd       "收集依赖库"
+    need_cmd curl     curl      "下载 appimagetool / runtime"
+    need_cmd file     file      "识别产物架构"
+    need_cmd stat     coreutils "读取文件大小"
+    need_cmd readlink coreutils "AppRun 解析自身路径"
 }
 
-# 报告缺失依赖，按需自动安装（apt）
+# 报告缺失依赖，按需自动安装（包管理器由发行版决定）
 ensure_deps() {
     if [ "${#MISSING_PKGS[@]}" -eq 0 ]; then
         return 0
     fi
     mapfile -t MISSING_PKGS < <(printf '%s\n' "${MISSING_PKGS[@]}" | sort -u)
 
-    warn "检测到缺少以下依赖："
+    warn "检测到缺少以下依赖（发行版：$(distro_family_zh)）："
     local d
     for d in "${MISSING_DESC[@]}"; do
         warn "  · $d"
     done
-    warn "需要安装的包：${MISSING_PKGS[*]}"
+    warn "将安装：$(pkg_hint "${MISSING_PKGS[@]}")"
 
     if [ "$AUTO_INSTALL" -eq 0 ]; then
         die "已指定 --no-install。请手动安装后重试：
-     sudo apt-get update && sudo apt-get install -y ${MISSING_PKGS[*]}"
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
     fi
 
     if [ "$(id -u)" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
         die "当前不是 root 且没有 sudo，无法自动安装。请以 root 执行：
-     apt-get update && apt-get install -y ${MISSING_PKGS[*]}"
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
     fi
 
     if [ "$ASSUME_YES" -eq 0 ]; then
         if [ ! -t 0 ]; then
             die "当前是非交互环境，未自动安装。请手动执行：
-     sudo apt-get install -y ${MISSING_PKGS[*]}"
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
         fi
         printf '%s[询问]%s 是否现在自动安装这些包？（需要管理员权限）[Y/n] ' "$YELLOW" "$NC"
         local ans=""
@@ -373,13 +374,14 @@ ensure_deps() {
         case "$ans" in
             n|N|no|NO|No)
                 die "已取消安装。手动安装命令：
-     sudo apt-get install -y ${MISSING_PKGS[*]}" ;;
+     $(manual_install_hint "${MISSING_PKGS[@]}")" ;;
         esac
     fi
 
-    info "正在安装：${MISSING_PKGS[*]}"
-    if ! apt_install "${MISSING_PKGS[@]}"; then
-        die "安装失败：${MISSING_PKGS[*]}"
+    info "正在安装：$(pkg_hint "${MISSING_PKGS[@]}")"
+    if ! install_keys "${MISSING_PKGS[@]}"; then
+        die "安装失败。请手动执行：
+     $(manual_install_hint "${MISSING_PKGS[@]}")"
     fi
     info "依赖安装完成"
 }
@@ -390,7 +392,7 @@ if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
     collect_missing
 fi
 if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
-    die "依赖仍然缺失：${MISSING_PKGS[*]}，请手动安装后重试"
+    die "依赖仍然缺失：$(pkg_hint "${MISSING_PKGS[@]}")，请手动安装后重试"
 fi
 
 # --- FUSE：只报告，不阻塞构建（构建不需要它，运行 AppImage 才需要）---
@@ -404,9 +406,8 @@ else
     warn "  · 不影响构建，只影响「直接运行」AppImage 产物"
     warn "  · 目标机器同样需要它，否则运行时报："
     warn "      dlopen(): error loading libfuse.so.2"
-    warn "  · 本机若也是目标机，安装命令（本机发行版对应包名）："
-    warn "      sudo apt install -y $HOST_FUSE_PKG"
-    warn "      （Fedora: sudo dnf install -y fuse-libs / Arch: sudo pacman -S fuse2）"
+    warn "  · 本机若也是目标机，安装命令（按本机发行版自动给出）："
+    warn "      $(manual_install_hint fuse)"
     warn "  · 或者让目标机免 FUSE 运行，什么都不用装："
     warn "      ./产物.AppImage --appimage-extract-and-run"
 
@@ -439,7 +440,15 @@ case "$(uname -m)" in
     aarch64|arm64)  ARCH_TAG="aarch64"; MULTIARCH="aarch64-linux-gnu" ;;
     *) die "不支持的架构：$(uname -m)（只支持 x86_64 与 aarch64）" ;;
 esac
-info "目标架构：$ARCH_TAG    glibc：$(ldd --version | head -1 | awk '{print $NF}')"
+info "发行版  ：$DISTRO_NAME（$(distro_family_zh)）"
+info "目标架构：$ARCH_TAG    libc：$(libc_flavor) $(ldd --version 2>&1 | head -1 | awk '{print $NF}')"
+if [ "$DISTRO_FAMILY" = "alpine" ]; then
+    warn "Alpine 用 musl libc，PyInstaller 打包兼容性差，建议在 glibc 发行版上构建"
+fi
+if [ "$DISTRO_FAMILY" = "unknown" ]; then
+    warn "未识别的发行版家族，无法自动安装依赖。请手动准备："
+    warn "  python3 + tkinter、python3-venv、ldd、curl、file、scrcpy、adb"
+fi
 
 [ -f "$GUI_PY" ]   || die "找不到界面脚本：$GUI_PY"
 [ -f "$ICON_SRC" ] || die "找不到图标文件：$ICON_SRC"
@@ -531,8 +540,8 @@ if [ -z "$SERVER_SRC" ]; then
         fi
     done
 fi
-if [ -z "$SERVER_SRC" ] && command -v dpkg >/dev/null 2>&1; then
-    SERVER_SRC="$(dpkg -L scrcpy 2>/dev/null | grep -m1 'scrcpy-server$' || true)"
+if [ -z "$SERVER_SRC" ]; then
+    SERVER_SRC="$(pkg_files scrcpy | grep -m1 'scrcpy-server$' || true)"
 fi
 if [ -n "$SERVER_SRC" ] && [ ! -f "$SERVER_SRC" ]; then
     SERVER_SRC=""
@@ -758,7 +767,7 @@ fetch_runtime() {
 build_with_mksquashfs() {
     if ! command -v mksquashfs >/dev/null 2>&1; then
         info "安装 squashfs-tools（提供 mksquashfs）…"
-        apt_install squashfs-tools >/dev/null 2>&1 || true
+        install_keys squashfs >/dev/null 2>&1 || true
     fi
     if ! command -v mksquashfs >/dev/null 2>&1; then
         warn "没有 mksquashfs，跳过这条路径"

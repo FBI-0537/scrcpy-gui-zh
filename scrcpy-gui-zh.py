@@ -371,6 +371,91 @@ def fuse_install_hint():
 
 
 # ------------------------------------------------------------------
+# 发行版识别（用于给出对应的安装命令）
+# ------------------------------------------------------------------
+
+def distro_info():
+    """读 /etc/os-release，返回 (ID, ID_LIKE, PRETTY_NAME)。"""
+    ident = like = name = ""
+    try:
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("ID="):
+                    ident = line.split("=", 1)[1].strip().strip('"')
+                elif line.startswith("ID_LIKE="):
+                    like = line.split("=", 1)[1].strip().strip('"')
+                elif line.startswith("PRETTY_NAME="):
+                    name = line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return ident, like, name
+
+
+def distro_family():
+    """发行版家族：debian / rhel / arch / suse / alpine / unknown。"""
+    if IS_WIN:
+        return "windows"
+    ident, like, _name = distro_info()
+    key = (ident + " " + like).lower()
+    for token, family in (("debian", "debian"), ("ubuntu", "debian"), ("mint", "debian"),
+                          ("pop", "debian"), ("kali", "debian"), ("raspbian", "debian"),
+                          ("rhel", "rhel"), ("fedora", "rhel"), ("centos", "rhel"),
+                          ("rocky", "rhel"), ("almalinux", "rhel"),
+                          ("arch", "arch"), ("manjaro", "arch"),
+                          ("suse", "suse"), ("alpine", "alpine")):
+        if token in key:
+            return family
+    return "unknown"
+
+
+def distro_name():
+    _ident, _like, name = distro_info()
+    return name or "未知发行版"
+
+
+_PKG_CMDS = {
+    "debian": "sudo apt install -y %s",
+    "rhel":   "sudo dnf install -y %s",
+    "arch":   "sudo pacman -S --needed %s",
+    "suse":   "sudo zypper install %s",
+    "alpine": "sudo apk add %s",
+}
+
+_PKG_NAMES = {
+    "python3":  {"debian": "python3", "rhel": "python3", "arch": "python",
+                 "suse": "python3", "alpine": "python3"},
+    "tkinter":  {"debian": "python3-tk", "rhel": "python3-tkinter", "arch": "tk",
+                 "suse": "python3-tk", "alpine": "py3-tkinter"},
+    "adb":      {"debian": "adb", "rhel": "android-tools", "arch": "android-tools",
+                 "suse": "android-tools", "alpine": "android-tools"},
+    "scrcpy":   {"debian": "scrcpy", "rhel": "scrcpy", "arch": "scrcpy",
+                 "suse": "scrcpy"},
+    "font-cjk": {"debian": "fonts-noto-cjk", "rhel": "google-noto-sans-cjk-fonts",
+                 "arch": "noto-fonts-cjk", "suse": "noto-sans-cjk-fonts",
+                 "alpine": "font-noto-cjk"},
+    "segno":    {"debian": "python3-segno", "rhel": "python3-segno",
+                 "arch": "python-segno", "suse": "python3-segno"},
+}
+
+
+def pkg_install_cmd(*keys):
+    """按本机发行版给出可直接粘贴的安装命令。"""
+    family = distro_family()
+    template = _PKG_CMDS.get(family)
+    names = []
+    for key in keys:
+        table = _PKG_NAMES.get(key, {})
+        name = table.get(family) or table.get("debian")
+        if name:
+            names.append(name)
+    if not names:
+        return "（请用你发行版的包管理器安装）"
+    if not template:
+        return "请手动安装：" + " ".join(names)
+    return template % " ".join(names)
+
+
+# ------------------------------------------------------------------
 # 二维码配对（Android 11+ 无线调试）
 # ------------------------------------------------------------------
 # 手机端扫码时要求的载荷不是 JSON，而是 WiFi 配置串形式：
@@ -754,16 +839,16 @@ class ScrcpyGui:
                 "        x86_64  → amd64（Intel/AMD 64 位）",
                 "        aarch64 → arm64（ARM 64 位，如树莓派 4/5、ARM 笔记本）",
                 "",
-                "【两个架构都通用的部分】",
-                "    sudo apt update",
-                "    sudo apt install -y python3-tk adb fonts-noto-cjk",
-                "    # 二维码功能（三选一，装不上就跳过，程序会提示用剪贴板代替）",
+                "【按发行版安装依赖】",
+                "    本机识别为：" + distro_name() + "（" + distro_family() + " 系）",
+                "    " + pkg_install_cmd("python3", "tkinter", "adb", "font-cjk"),
+                "    " + pkg_install_cmd("scrcpy") + "        ← 注意版本，见下方说明",
+                "    # 二维码功能（三选一，装不上也不影响其它功能）",
                 "    pip install segno",
-                "    sudo apt install -y python3-segno     # 源里有的话",
-                "    sudo apt install -y python3-qrcode    # 或这个，程序同样支持",
+                "    或装发行版包：python3-segno / python3-qrcode",
                 "",
-                "    adb、python3-tk、中文字体在 amd64 与 arm64 上包名完全相同，",
-                "    apt 会自动选对应架构的包，不需要额外改仓库。",
+                "    构建脚本支持 apt / dnf / pacman / zypper / apk 五种包管理器，",
+                "    会自动识别发行版家族并选用对应的包名，不用你手改仓库。",
                 "",
                 "──────────── amd64 / x86_64 ────────────",
                 "    sudo apt install -y scrcpy",
@@ -914,9 +999,12 @@ class ScrcpyGui:
             hint_scr = "没有找到 scrcpy.exe。\n请下载 scrcpy-win64 包解压到 C:\\scrcpy，或把该目录加入 PATH。"
             upgrade = "！ 升级方法：到官方发布页下载最新的 scrcpy-win64 压缩包，解压覆盖原目录。"
         else:
-            hint_adb = "没有找到 adb，请执行：sudo apt install -y adb"
-            hint_scr = "没有找到 scrcpy，请执行：sudo apt install -y scrcpy"
-            upgrade = "！ 升级命令：sudo snap install scrcpy"
+            hint_adb = "没有找到 adb。\n安装：%s" % pkg_install_cmd("adb")
+            hint_scr = ("没有找到 scrcpy。\n安装：%s\n"
+                        "注意：老发行版源里的版本投不了 Android 14+，\n"
+                        "可用 build-linux.sh --auto-scrcpy 自动源码编译。"
+                        % pkg_install_cmd("scrcpy"))
+            upgrade = "！ 升级建议：用构建脚本的 --auto-scrcpy 自动源码编译最新版"
 
         problems = []
         if not ADB:

@@ -55,6 +55,20 @@ snap 版又因为链接 snap 私有 glibc 而无法打包。所以：
 | ② 系统里已有可用的 | 什么都不做 | 版本 ≥ 2.2 且非 snap 时直接使用 |
 | ③ 手动编译 | 见 [docs/BUILD.md](docs/BUILD.md) 第 7 节 | 用 `SCRCPY_BIN=` 指定路径 |
 
+**支持的发行版**（构建脚本自动识别家族，选用对应的包管理器与包名）：
+
+| 家族 | 发行版示例 | 包管理器 |
+|---|---|---|
+| Debian 系 | Debian、Ubuntu、Linux Mint、Pop!_OS、Kali、树莓派 OS | `apt-get` / `dpkg` |
+| RHEL 系 | Fedora、RHEL、CentOS Stream、Rocky、AlmaLinux | `dnf` / `yum` / `rpm` |
+| Arch 系 | Arch、Manjaro、EndeavourOS、Garuda | `pacman` |
+| openSUSE 系 | openSUSE Leap / Tumbleweed、SLES | `zypper` / `rpm` |
+| Alpine | Alpine Linux | `apk`（musl libc，会警告打包兼容性） |
+
+**不用改软件源、不用自己查包名**：缺依赖时会列出清单并给出**本发行版**对应的安装命令
+（例如 Fedora 上是 `sudo dnf install -y python3-tkinter android-tools ...`）。
+`scrcpy` / `adb` 在 RHEL 系可能需要额外仓库（如 RPM Fusion）。
+
 ```bash
 # 全自动：连 scrcpy 都帮你编译好（首次约 10–20 分钟，主要在编 SDL3）
 ./build-linux.sh --auto-scrcpy --yes --clean
@@ -192,6 +206,7 @@ sudo apt install -y android-sdk-platform-tools-common
 scrcpy-gui-zh/
 ├── scrcpy-gui-zh.py        主程序（单文件，约 1600 行，无第三方依赖）
 ├── install-udev.sh         Linux USB 权限安装（一次性，需 root）
+├── build-common.sh         发行版适配层（apt / dnf / pacman / zypper / apk）
 ├── build-linux.sh          Linux 单个可执行文件构建（x86_64 / aarch64）
 ├── build-appimage.sh       Linux AppImage 构建（可选）
 ├── build-windows.ps1       Windows exe 构建（需 UTF-8 BOM）

@@ -42,7 +42,14 @@
   `PKEXEC_UID` 判断真实用户；处理 `plugdev` 组不存在的情况；重载 udev 并做现状检查
 
 ### 构建
-- **新增 `build-linux.sh`：Linux 单个自包含可执行文件**（与 Windows 的 `-SingleFile`
+- **支持多种 Linux 发行版**：新增 `build-common.sh` 发行版适配层，自动识别
+  Debian 系（apt/dpkg）、RHEL 系（dnf/yum/rpm）、Arch 系（pacman）、
+  openSUSE 系（zypper/rpm）、Alpine（apk）三/五个家族，并把「逻辑依赖键」映射成
+  各发行版的实际包名（如 `tkinter` → python3-tk / python3-tkinter / tk / py3-tkinter）；
+  安装失败会自动刷新软件源重试；识别不出的发行版只报告不擅自改动系统
+- 图形界面同步支持：状态栏提示与帮助页按本机发行版给出安装命令，
+  `/etc/os-release` 识别失败时回退到通用说明
+- 新增 `build-linux.sh`：Linux 单个自包含可执行文件（与 Windows 的 `-SingleFile`
   对齐）。用 PyInstaller `--onefile` 把 Python + Tcl/Tk + 界面 + segno + scrcpy +
   adb + 全部依赖 `.so` + `scrcpy-server` + `install-udev.sh` 打进一个 ELF 文件，
   目标机器 `chmod +x` 直接运行，**不需要 FUSE**

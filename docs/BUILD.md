@@ -29,6 +29,46 @@
 
 ## 2. 依赖矩阵
 
+### 2.0 支持的发行版
+
+构建脚本通过 `build-common.sh` 识别发行版家族，安装依赖时自动换成对应的包管理器与
+包名。**不需要你改软件源或手查包名。**
+
+| 家族 | 判定依据 | 包管理器 | 查询已安装 | 列包内文件 |
+|---|---|---|---|---|
+| `debian` | `ID`/`ID_LIKE` 含 debian/ubuntu/mint/pop/kali/raspbian | `apt-get` | `dpkg -s` | `dpkg -L` |
+| `rhel` | 含 rhel/fedora/centos/rocky/almalinux/openeuler/amzn | `dnf`（回退 `yum`） | `rpm -q` | `rpm -ql` |
+| `arch` | 含 arch/manjaro/endeavouros/garuda | `pacman -S --needed` | `pacman -Q` | `pacman -Qlq` |
+| `suse` | 含 suse/sles/sled | `zypper --non-interactive` | `rpm -q` | `rpm -ql` |
+| `alpine` | `ID` 含 alpine | `apk add` | `apk info -e` | `apk info -L` |
+| `unknown` | 都不匹配 | ❌ 不自动安装 | — | — |
+
+识别不出来时（`unknown`）会按「有没有 apt-get / dnf / pacman / zypper / apk」兜底；
+再不行就只报告缺失、打印手动安装提示，不做任何改动。
+
+**逻辑依赖键 → 包名**（节选，完整表见 `build-common.sh`）：
+
+| 逻辑键 | Debian | RHEL | Arch | openSUSE | Alpine |
+|---|---|---|---|---|---|
+| `tkinter` | python3-tk | python3-tkinter | tk | python3-tk | py3-tkinter |
+| `venv` | python3-venv | python3-libs | python | python3-base | py3-virtualenv |
+| `ldd` | libc-bin | glibc-common | glibc | glibc | musl |
+| `adb` | adb | android-tools | android-tools | android-tools | android-tools |
+| `scrcpy` | scrcpy | scrcpy（需 RPM Fusion） | scrcpy | scrcpy | — |
+| `ninja` | ninja-build | ninja-build | ninja | ninja-build | samurai |
+| `pkgconfig` | pkg-config | pkgconf-pkg-config | pkgconf | pkg-config | pkgconf |
+| `gxx` | g++ | gcc-c++ | gcc | gcc-c++ | g++ |
+| `ffmpeg-dev` | libavcodec-dev 等 4 个 | ffmpeg-devel | ffmpeg | ffmpeg-devel | ffmpeg-dev |
+| `libusb-dev` | libusb-1.0-0-dev | libusb1-devel | libusb | libusb-1_0-devel | libusb-dev |
+| `sdl3-dev` | libsdl3-dev | SDL3-devel | sdl3 | libSDL3-devel | sdl3-dev |
+| `squashfs` | squashfs-tools | squashfs-tools | squashfs-tools | squashfs | squashfs-tools |
+| `fuse` | libfuse2 / libfuse2t64 | fuse-libs | fuse2 | libfuse2 | fuse |
+| `font-cjk` | fonts-noto-cjk | google-noto-sans-cjk-fonts | noto-fonts-cjk | noto-sans-cjk-fonts | font-noto-cjk |
+
+**Alpine 特别说明**：它用 musl libc 而不是 glibc，PyInstaller 打包与依赖库收集的
+兼容性都较差，脚本会给出警告。建议在 glibc 发行版（Debian/Ubuntu/Fedora/Arch 等）
+上构建产物，Alpine 上只做源码运行。
+
 ### 2.1 运行本项目（三种产物都需要）
 
 | 依赖 | 是否必需 | 说明 |
