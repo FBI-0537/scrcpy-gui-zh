@@ -40,7 +40,7 @@ err()  { printf '%s[错误]%s %s\n' "$RED" "$NC" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 step() { printf '\n%s==> %s%s\n' "$BOLD" "$*" "$NC"; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 
 # 发行版适配层（apt / dnf / pacman / zypper / apk）
 # shellcheck source=build-common.sh
@@ -386,6 +386,22 @@ fi
 [ -f "$GUI_PY" ]   || die "找不到界面脚本：$GUI_PY"
 [ -f "$UDEV_SRC" ] || die "找不到 udev 安装脚本：$UDEV_SRC"
 info "python3：$(python3 --version 2>&1)"
+info "脚本目录：$SCRIPT_DIR"
+info "中间产物：$BUILD_ROOT"
+info "最终产物：$DIST_DIR"
+
+# 产物跟脚本走；在回收站/临时目录里构建很容易让人找不到东西，也可能被系统清掉
+case "$SCRIPT_DIR" in
+    */.local/share/Trash/*|*/Trash/*|/tmp/*)
+        warn "当前项目位于回收站或临时目录：$SCRIPT_DIR"
+        warn "  · 构建产物也会落在那里（中间产物 build-linux/、最终产物 dist/）"
+        warn "  · 回收站随时可能被清空，临时目录重启就没了"
+        warn "  · 建议先把它移回正常位置再构建，例如："
+        warn "      mv '$SCRIPT_DIR' ~/下载/scrcpy-gui-zh-new"
+        warn "      rm -f ~/下载/scrcpy-gui-zh      # 若旧路径是符号链接"
+        warn "      mv ~/下载/scrcpy-gui-zh-new ~/下载/scrcpy-gui-zh"
+        ;;
+esac
 
 # ---------------------------------------------------------------------------
 # 2. 获取 scrcpy / adb / scrcpy-server
@@ -549,9 +565,10 @@ else
      三种处理方式，任选其一：
        1) 联网后重跑（脚本会自动下载官方 platform-tools 到 vendor/platform-tools/）
             ./build-linux.sh --clean
-       2) 手动下载解压：
+       2) 手动下载解压（注意补可执行位，python3 -m zipfile 不保留权限）：
             wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-            python3 -m zipfile -e platform-tools-latest-linux.zip vendor/
+            unzip -q platform-tools-latest-linux.zip -d vendor/
+            chmod +x vendor/platform-tools/adb
        3) 明确不需要无线配对，只想打 USB 那部分：
             ./build-linux.sh --allow-old-adb --clean"
     fi

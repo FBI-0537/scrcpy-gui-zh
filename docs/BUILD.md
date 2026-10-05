@@ -121,6 +121,10 @@
 
 下载地址：`https://dl.google.com/android/repository/platform-tools-latest-linux.zip`
 
+解压方式：优先用 `unzip`（保留 zip 内的 Unix 权限）；没有 `unzip` 时回退到
+`python3 -m zipfile -e`，但 **Python 的 zipfile 不还原权限**，脚本会在解压后统一
+`chmod 0755`，并校验 `adb` 确实可执行、确实支持 mdns —— 任何一步不过都算失败。
+
 构建结束时会打印：
 
 ```

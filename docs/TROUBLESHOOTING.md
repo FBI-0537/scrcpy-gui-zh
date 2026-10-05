@@ -183,10 +183,15 @@ adb: unknown command mdns
 ```bash
 cd 项目目录
 wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-python3 -m zipfile -e platform-tools-latest-linux.zip vendor/     # 或 unzip -d vendor/
+unzip -q platform-tools-latest-linux.zip -d vendor/
+chmod +x vendor/platform-tools/adb          # 关键：丢了可执行位程序就认不出来
 # 得到 vendor/platform-tools/adb，程序会自动优先使用
-./build-linux.sh --clean          # 重新打包
+./build-linux.sh --clean                    # 重新打包
 ```
+
+> 没装 `unzip` 也可以用 `python3 -m zipfile -e platform-tools-latest-linux.zip vendor/`，
+> 但**必须补 `chmod +x vendor/platform-tools/adb`** —— Python 的 zipfile 不还原 Unix 权限，
+> 这正是脚本早期版本报「解压后没找到 adb」的原因。
 
 **解法三：绕开无线配对，用「方式一：USB 转无线」**
 

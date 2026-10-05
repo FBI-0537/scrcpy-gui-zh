@@ -482,18 +482,34 @@ fetch_platform_tools() {
         return 1
     fi
     rm -rf "$dest"
-    # 用 python3 解压，免去对 unzip 的依赖（python3 是构建必需项）
-    if ! python3 -m zipfile -e "$zip" "$parent" >/dev/null 2>&1; then
-        warn "解压 platform-tools 失败"
+    # 优先 unzip（会保留 zip 里的 Unix 权限）；没有就用 python3 -m zipfile，
+    # 但 python 的 zipfile 不还原权限，后面必须手动补可执行位。
+    if command -v unzip >/dev/null 2>&1; then
+        if ! unzip -q -o "$zip" -d "$parent" >/dev/null 2>&1; then
+            warn "unzip 解压 platform-tools 失败"
+            rm -f "$zip"
+            return 1
+        fi
+    elif python3 -m zipfile -e "$zip" "$parent" >/dev/null 2>&1; then
+        info "（系统没有 unzip，已用 python3 解压，稍后补可执行位）"
+    else
+        warn "解压 platform-tools 失败（unzip 与 python3 zipfile 都不可用）"
         rm -f "$zip"
         return 1
     fi
     rm -f "$zip"
-    if [ ! -x "$dest/adb" ]; then
-        warn "解压后没找到 $dest/adb"
+
+    if [ ! -e "$dest/adb" ]; then
+        warn "解压后没找到 $dest/adb，目录内容："
+        ls -l "$dest" 2>/dev/null | head -8 || true
         return 1
     fi
-    chmod +x "$dest/adb"
+    # 关键：python3 -m zipfile 不保留可执行位，这里统一补上
+    chmod 0755 "$dest/adb" 2>/dev/null || true
+    if [ ! -x "$dest/adb" ]; then
+        warn "无法给 $dest/adb 补上可执行位，请检查挂载选项（是否 noexec）"
+        return 1
+    fi
     if ! adb_mdns_supported "$dest/adb"; then
         warn "下载到的最新 platform-tools 仍然不支持 mdns（异常情况）"
         warn "  版本：$(adb_version_text "$dest/adb")"

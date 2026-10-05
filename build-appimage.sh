@@ -241,7 +241,7 @@ build_scrcpy_from_source() {
     info "scrcpy 已编译并安装到项目目录：$VENDOR_SCRCPY"
 }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 
 # 发行版适配层（apt / dnf / pacman / zypper / apk）
 # shellcheck source=build-common.sh
@@ -637,9 +637,10 @@ else
      三种处理方式，任选其一：
        1) 联网后重跑（脚本会自动下载官方 platform-tools 到 vendor/platform-tools/）
             ./build-appimage.sh --clean
-       2) 手动下载解压：
+       2) 手动下载解压（注意补可执行位，python3 -m zipfile 不保留权限）：
             wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-            python3 -m zipfile -e platform-tools-latest-linux.zip vendor/
+            unzip -q platform-tools-latest-linux.zip -d vendor/
+            chmod +x vendor/platform-tools/adb
        3) 明确不需要无线配对，只想打 USB 那部分：
             ./build-appimage.sh --allow-old-adb --clean"
     fi
