@@ -543,6 +543,18 @@ apply_apt_mirror() {
         debian) ;;
         *) return 0 ;;
     esac
+    # debian:11 / debian:12 这类极简镜像**没有 ca-certificates**，用 https 源会
+    # 「Certificate verification failed: No system certificates available」，
+    # 而想装 ca-certificates 又得先连上源 —— 死循环。
+    # 所以容器里没有 CA 证书时自动退回 http（包的 GPG 签名仍然会校验）。
+    if [ ! -e /etc/ssl/certs/ca-certificates.crt ] && [ ! -e /usr/share/ca-certificates ]; then
+        case "$mirror" in
+            https://*)
+                warn "容器里没有 ca-certificates，https 源无法握手 —— 自动改用 http"
+                mirror="http://${mirror#https://}"
+                ;;
+        esac
+    fi
     info "把容器内的 apt 源换成镜像：$mirror"
     local exprs=(
         -e "s|https\\?://deb.debian.org/debian-security|$mirror/debian-security|g"
