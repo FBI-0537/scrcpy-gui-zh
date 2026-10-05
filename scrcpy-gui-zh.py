@@ -1824,6 +1824,16 @@ def main():
         sys.exit(selftest())
     if "--version" in sys.argv:
         print("scrcpy-gui-zh 1.0.0")
+        # 打个构建时间，方便确认手上这个产物到底是哪一次构建的
+        try:
+            target = sys.executable if getattr(sys, "frozen", False) else __file__
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S",
+                                  time.localtime(os.path.getmtime(target)))
+            print("构建时间：%s" % stamp)
+            print("运行方式：%s" % ("打包的可执行文件" if getattr(sys, "frozen", False)
+                                   else "源码"))
+        except OSError:
+            pass
         sys.exit(0)
 
     root = tk.Tk()
