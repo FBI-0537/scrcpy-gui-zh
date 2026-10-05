@@ -101,7 +101,7 @@ jobs:
             -v "$PWD:/src" -w /src \
             -e APP_VER="${{ needs.plan.outputs.version }}" \
             ${{ matrix.image }} \
-            bash -c "./build-linux.sh --yes ${{ matrix.extra }}"
+            bash -c "bash ./build-linux.sh --yes ${{ matrix.extra }}"
 
       - name: 验收产物（架构是否与文件名一致、组件是否齐全）
         run: python3 verify-release.py dist/

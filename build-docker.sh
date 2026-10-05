@@ -327,7 +327,9 @@ for t in "${TARGETS[@]}"; do
         arm64|armhf) EXTRA+=(--allow-old-adb) ;;
     esac
 
-    INNER_CMD="./build-linux.sh"
+    # 显式用 bash 启动：Windows 上 git 不会给 .sh 记执行位，
+    # 即便仓库里修好了，别的克隆/挂载方式也可能丢掉它
+    INNER_CMD="bash ./build-linux.sh"
     for a in "${FORWARD[@]:-}" "${EXTRA[@]:-}"; do
         [ -n "$a" ] || continue
         INNER_CMD="$INNER_CMD $(printf '%q' "$a")"

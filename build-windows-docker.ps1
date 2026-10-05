@@ -357,7 +357,8 @@ foreach ($t in $Targets) {
     # 非 x86_64 上 Google 不提供 platform-tools：脚本会从 Debian/Ubuntu 归档取本架构
     # 的 adb（debian:12 能拿到 34.0.5 → 无线配对可用；debian:11 拿不到）。
     # --allow-old-adb 让「拿不到时」继续构建而不是中止。
-    $inner = './build-linux.sh --yes'
+    # 显式用 bash 启动（不依赖 .sh 的执行位，Windows 上 git 不记录它）
+    $inner = 'bash ./build-linux.sh --yes'
     if ($t.Arch -in @('arm64', 'armhf')) { $inner += ' --allow-old-adb' }
     # scrcpy 在 Debian 12 (bookworm) 等发行版的仓库里根本不存在，
     # 从归档下载也常因 glibc 不匹配失败 —— 加上这个就在容器里源码编译
