@@ -942,6 +942,7 @@ class ScrcpyGui:
         self.proc = None
         self.log_queue = queue.Queue()
         self.device_map = {}          # 下拉框显示文本 -> serial
+        self.hidden_serials = set()   # 被「删除设备」在列表里隐藏的 serial
         self._mirroring = False
         self._usb_fix_offered = False  # 是否已弹过「USB 权限」提示
         self._fuse_warned = False      # 是否已弹过「缺 FUSE」提示
@@ -1033,6 +1034,8 @@ class ScrcpyGui:
         self.cmb_device = ttk.Combobox(row, state="readonly", width=46)
         self.cmb_device.pack(side="left", padx=6, fill="x", expand=True)
         ttk.Button(row, text="刷新设备", command=self.refresh_devices).pack(side="left")
+        ttk.Button(row, text="删除设备", command=self.remove_device).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="显示全部", command=self.show_all_devices).pack(side="left", padx=(6, 0))
         if not IS_WIN:
             ttk.Button(row, text="安装 USB 权限",
                        command=self.install_usb_permission).pack(side="left", padx=(6, 0))
@@ -1447,23 +1450,35 @@ class ScrcpyGui:
         devices = adb_devices()
         self.device_map.clear()
         shown = []
+        hidden_now = 0
         for serial, state, model in devices:
+            if serial in self.hidden_serials:
+                hidden_now += 1
+                continue
             label = "%s  [%s]%s" % (model or serial, STATE_ZH.get(state, state),
                                     "" if model else "")
             self.device_map[label] = serial
             shown.append(label)
 
         self.cmb_device.configure(values=shown)
+        tail_hidden = ("（另有 %d 台已被隐藏，点「显示全部」恢复）" % hidden_now
+                       if hidden_now else "")
         if shown:
             if self.cmb_device.get() not in shown:
                 self.cmb_device.current(0)
-            self.lbl_devhint.configure(text="检测到 %d 台设备。若状态不是「已授权」，请在手机上确认授权弹窗。"
-                                            % len(shown))
+            self.lbl_devhint.configure(
+                text="检测到 %d 台设备。若状态不是「已授权」，请在手机上确认授权弹窗。%s"
+                     % (len(shown), tail_hidden))
             self._set_status("已检测到 %d 台设备" % len(shown))
         else:
             self.cmb_device.set("")
             tail = ("③ 已配置 udev 权限规则。" if not IS_WIN
                     else "③ 已装好厂商 USB 驱动（设备管理器里没有感叹号）。")
+            if hidden_now:
+                self.lbl_devhint.configure(
+                    text="%d 台设备已被隐藏（点「显示全部」恢复）。" % hidden_now)
+                self._set_status("设备都被隐藏了")
+                return
             self.lbl_devhint.configure(
                 text="没有检测到设备。请检查：① 数据线支持传输（非纯充电线）；"
                      "② 手机已开启 USB 调试并点了「允许」；" + tail)
@@ -1476,6 +1491,69 @@ class ScrcpyGui:
 
     def current_serial(self):
         return self.device_map.get(self.cmb_device.get())
+
+    # ---------- 删除 / 恢复设备 ----------
+
+    def remove_device(self):
+        """把选中的设备从列表里删掉。
+
+        · 网络设备（IP:端口）：adb disconnect 真正断开，之后不再出现
+        · USB 设备：ADB 命令删不掉（它由数据线连接），只能拔线，
+          所以这里提供「仅在列表中隐藏」
+        """
+        if not ADB:
+            return
+        label = self.cmb_device.get()
+        serial = self.current_serial()
+        if not label:
+            messagebox.showinfo(APP_TITLE, "列表里没有设备可选。\n先点「刷新设备」。")
+            return
+        if not serial:
+            # 下拉框里有内容但没匹配到（例如内容被手动改过）
+            messagebox.showinfo(APP_TITLE,
+                                "没能识别选中的设备，请重新点「刷新设备」后再试。")
+            return
+
+        if ":" in serial:      # 网络设备：可以是真删
+            if not messagebox.askyesno(
+                    APP_TITLE,
+                    "断开并删除这个网络设备？\n\n%s\n\n会执行：adb disconnect %s\n"
+                    "（这只断开 ADB，不影响手机本身）" % (label, serial)):
+                return
+            rc, out = run([ADB, "disconnect", serial])
+            self.log("$ adb disconnect %s" % serial)
+            self.log(out.strip() or "(无输出)")
+            if rc != 0:
+                self.log("！ adb disconnect 返回非零，仍会把它从列表里去掉")
+            self.hidden_serials.add(serial)
+            self.refresh_devices()
+            self._set_status("已删除 %s" % serial)
+            if self.cmb_device.get() == "":
+                self.lbl_devhint.configure(
+                    text="已删除 %s。重连时在「无线连接」页再点一次「连接」。" % serial)
+            return
+
+        # USB 设备
+        if messagebox.askyesno(
+                APP_TITLE,
+                "这是 USB 连接的设备：\n\n%s\n\n"
+                "ADB 无法用命令删掉 USB 设备 —— 它由数据线连着，只能拔线，"
+                "或者关掉手机的「USB 调试」。\n\n"
+                "要只在列表里隐藏它吗？（重新插拔后仍会出现）" % serial):
+            self.hidden_serials.add(serial)
+            self.refresh_devices()
+            self.log("已在列表中隐藏 %s（USB 设备请拔线移除）" % serial)
+            self._set_status("已隐藏 %s" % serial)
+
+    def show_all_devices(self):
+        """把之前隐藏的设备恢复显示。"""
+        count = len(self.hidden_serials)
+        self.hidden_serials.clear()
+        self.refresh_devices()
+        if count:
+            self.log("已恢复显示全部设备（取消隐藏 %d 台）" % count)
+        else:
+            self.log("没有隐藏中的设备。")
 
     # ---------- 构建并启动命令 ----------
 
