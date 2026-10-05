@@ -93,15 +93,60 @@ jobs:
       # ARM 架构靠 QEMU 模拟（GitHub 托管的 runner 需要这一步）
       - uses: docker/setup-qemu-action@v3
 
+      # 先把「脚本在不在、行尾对不对、容器里能不能跑起来」查清楚，
+      # 并把结果写进 job 摘要 —— 失败时在你的运行总结页上就能看到原因，
+      # 不用翻几十屏构建日志。
+      # 这一步只做诊断，永远不 fail（末尾 exit 0）。
+      - name: 诊断（脚本是否就位 / 行尾 / 容器可用性）
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "### 诊断：${{ matrix.image }} / ${{ matrix.platform }}"
+            echo
+            echo '**工作区里的脚本**（没有 x 位不影响 `bash 脚本`，但若文件缺失就是 127）：'
+            echo '```'
+            ls -l build-linux.sh build-common.sh install-udev.sh 2>&1
+            echo '```'
+            echo '**build-linux.sh 首行字节**（若出现 `\r` 说明是 CRLF 行尾，会直接导致 exit 127）：'
+            echo '```'
+            head -c 40 build-linux.sh | od -c | head -2
+            echo '```'
+            echo '**容器内看到的 /src 与语法检查**：'
+            echo '```'
+            docker run --rm --platform ${{ matrix.platform }} \
+              -v "$PWD:/src" -w /src ${{ matrix.image }} \
+              bash -c 'ls -l /src/build-linux.sh; head -c 40 /src/build-linux.sh | od -c | head -2; bash -n /src/build-linux.sh && echo "语法检查：通过" || echo "语法检查：失败"' 2>&1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "诊断已写入 job 摘要"
+          exit 0
+
       - name: 在 ${{ matrix.image }} 容器里构建
         shell: bash
         run: |
+          # 注意：GitHub 的 run 默认是 bash -e，管道一失败就立刻退出，
+          # 那样 ${PIPESTATUS[0]} 拿不到、摘要也写不进去。所以这里临时关掉 -e。
+          set +e
           docker run --rm \
             --platform ${{ matrix.platform }} \
             -v "$PWD:/src" -w /src \
             -e APP_VER="${{ needs.plan.outputs.version }}" \
             ${{ matrix.image }} \
-            bash -c "bash ./build-linux.sh --yes ${{ matrix.extra }}"
+            bash -c "cd /src && bash ./build-linux.sh --yes ${{ matrix.extra }}" 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          echo "构建退出码：$rc"
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo "### ❌ 构建失败（退出码 $rc）"
+              echo
+              echo '最后 40 行：'
+              echo '```'
+              tail -40 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$rc"
 
       - name: 验收产物（架构是否与文件名一致、组件是否齐全）
         run: python3 verify-release.py dist/
