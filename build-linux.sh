@@ -31,6 +31,18 @@
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# 容器（尤其 debian:11 这类基础镜像）里通常**没有设置 locale**（LANG 为空），
+# 这时 Python 3 的 stdout 默认是 ASCII 编码 —— 而我们的构建流程会在最后
+# 运行产物做自检（`--selftest` 会打印中文），脚本本身也大量输出中文，
+# 不设这个会直接 UnicodeEncodeError 让构建失败。
+# C.UTF-8 是 glibc 内置的，不需要 locale-gen。
+# ---------------------------------------------------------------------------
+export LANG="${LANG:-C.UTF-8}"
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+export PYTHONIOENCODING="utf-8"
+export PYTHONUTF8="1"
+
 GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; BOLD=$'\033[1m'; NC=$'\033[0m'
 info() { printf '%s[信息]%s %s\n' "$GREEN" "$NC" "$*"; }
 warn() { printf '%s[注意]%s %s\n' "$YELLOW" "$NC" "$*"; }

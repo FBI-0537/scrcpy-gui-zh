@@ -1,4 +1,14 @@
 ### 修复
+- **容器里没有 locale 会导致构建最后一步失败**：debian:11 / rockylinux:8 这类基础镜像
+  的 LANG 是空的，此时 Python 3 的 stdout 默认落到 ASCII，而构建流程最后会运行产物
+  做自检（`--selftest` 打印中文），脚本本身也大量输出中文 → UnicodeEncodeError。
+  `build-linux.sh` 开头现在强制设置 `LANG/LC_ALL=C.UTF-8`（glibc 内置，无需 locale-gen）
+  与 `PYTHONIOENCODING=utf-8` / `PYTHONUTF8=1`。
+- 澄清：挂载自检里那句「可能是路径含中文导致」只是兜底提示，不是实际原因 ——
+  用户实测中文路径挂载正常（容器里 `ls /src` 返回 17 个条目），
+  真正的原因是探测代码解析多行输出有 bug（已在前一提交修复）。
+
+### 修复
 - **`build-windows-docker.cmd` 里的中文注释把批处理本身弄坏了**：cmd.exe 按 OEM 代码页
   （GBK）读批处理，UTF-8 的中文被解码成乱码，其中一段甚至被当成命令执行
   （报 `'鍦ㄦ病鏈?UTF-8' 不是内部或外部命令`）。该文件改为**全 ASCII**，
