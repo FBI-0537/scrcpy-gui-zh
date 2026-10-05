@@ -44,6 +44,14 @@
 ### 构建
 - `build-appimage.sh`：9 步流程，自动收集 `ldd` 依赖（排除 glibc 与显卡驱动栈）、
   生成 `AppRun`/`.desktop`/图标、下载对应架构的 `appimagetool`、**解包自检**
+- **Linux 自动准备 scrcpy（`--auto-scrcpy`）**：与 Windows 侧对称 —— 系统 scrcpy
+  不可用（缺失 / 版本 < 2.2 / snap 版 / 找不到 server）时，自动安装编译依赖、
+  必要时自行编译 SDL3（老发行版没有 `libsdl3-dev`）、下载 scrcpy 源码与匹配的
+  `scrcpy-server`，meson+ninja 编译并以 `--prefix` 安装到**项目 `vendor/scrcpy/`**；
+  新增 `--scrcpy-version <版本>`（也可用环境变量 `SCRCPY_VERSION`）指定版本；
+  已有 `vendor/scrcpy/` 时直接复用不重编
+- `ldd` 收集依赖时带上 `vendor/sdl3/lib`、`vendor/scrcpy/lib` 的
+  `LD_LIBRARY_PATH`，保证自编 SDL3 也能被打进 AppImage
 - **Windows 构建自动准备 scrcpy**：`build-windows.ps1` 按「`-BundleScrcpy` 指定 →
   项目内 `vendor\scrcpy\` 复用 → 自动从 GitHub 下载最新 `scrcpy-win64`」的顺序获取，
   装到**项目目录**而非系统目录（不污染系统、不需管理员权限、删 `vendor` 即卸载）；

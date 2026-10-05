@@ -206,8 +206,41 @@ Python 侧的 PyInstaller 与 segno 则会自动装进脚本自建的虚拟环�
 | （无） | 缺依赖时列出清单并询问 `[Y/n]` |
 | `--yes` / `-y` | 缺依赖直接自动安装，不询问（适合 CI / docker） |
 | `--no-install` | 只做检查，缺依赖就报错退出，绝不改动系统 |
+| **`--auto-scrcpy`** | **系统 scrcpy 不可用时，自动源码编译到项目 `vendor/scrcpy/`** |
+| **`--scrcpy-version <版本>`** | 自动编译时指定版本，如 `4.1`；默认取最新 |
+| `--no-readme` | 不在 `dist/` 生成 `FUSE说明.txt` |
 | `--clean` | 先删 `build-appimage/` 和 `dist/` 再构建 |
 | `--help` | 显示脚本头部说明 |
+
+### 5.1.1 `--auto-scrcpy`：Linux 上自动准备 scrcpy
+
+Linux 没有 scrcpy 的官方预编译二进制（只有源码），而发行版源里的版本通常太旧、
+snap 版又因链接 snap 私有 glibc 无法打包。`--auto-scrcpy` 把这一整套自动化：
+
+```
+1. 系统 scrcpy 可用（版本 ≥ 2.2 且非 snap）→ 直接用，跳过下面全部
+2. 项目 vendor/scrcpy/ 里已有编译好的      → 直接复用，不重复编译
+3. 否则自动：
+   a. 逐个安装编译依赖（meson ninja pkg-config cmake gcc g++ 
+      libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libusb-1.0-0-dev）
+   b. 若 pkg-config 找不到 sdl3 → 先试 libsdl3-dev；
+      仍不行就下载 SDL3 源码编译到 vendor/sdl3（老发行版走这条，最耗时）
+   c. 下载 scrcpy-server-vX.Y 与 scrcpy vX.Y 源码
+   d. meson setup --prefix=vendor/scrcpy -Dprebuilt_server=... → ninja → ninja install
+```
+
+结果全在 **`项目/vendor/`**：不写系统目录、不需要管理员权限、删 `vendor` 即卸载。
+`vendor/` 已在 `.gitignore` 里。
+
+```bash
+./build-appimage.sh --auto-scrcpy --clean                    # 最新版
+./build-appimage.sh --auto-scrcpy --scrcpy-version 4.1       # 指定版本
+./build-appimage.sh --auto-scrcpy --yes --clean              # 依赖也免询问自动装
+SCRCPY_VERSION=4.1 ./build-appimage.sh --auto-scrcpy         # 也可以用环境变量
+```
+
+> 首次约 **10–20 分钟**，主要花在编译 SDL3。第二次构建只要 `vendor/scrcpy/`
+> 还在就直接复用（想强制重编就删掉该目录）。
 
 安装用的命令是 `sudo apt-get install -y <包>`；若直接安装失败（软件源过期），
 会自动补一次 `apt-get update` 再重试。非 root 且无 sudo、或非交互环境下
@@ -262,7 +295,7 @@ SCRCPY_SERVER=/path/to/scrcpy-server-v4.1 \
 | 步骤 | 做什么 | 失败时的典型原因 |
 |---|---|---|
 | 1 | 架构/glibc 检测、依赖检查与自动安装、**宿主 FUSE 状态报告**（只报告，不阻塞） | 缺 `python3-tk` / `python3-venv` |
-| 2 | 定位 scrcpy / adb / scrcpy-server；**版本闸门** | scrcpy < 2.2 会警告；**snap 版直接拒绝** |
+| 2 | **获取** scrcpy / adb / scrcpy-server；不可用时按需自动编译（`--auto-scrcpy`） | scrcpy 缺失、版本 < 2.2、snap 版、找不到 server |
 | 3 | 准备 AppDir 目录 | 权限 |
 | 4 | venv 里装 PyInstaller + segno，`--onedir` 打包界面 | 网络（pip 走代理失败） |
 | 5 | 复制 scrcpy / adb / server / udev 脚本，`ldd` 收集 `.so` | 依赖库收集不全（见 5.4） |

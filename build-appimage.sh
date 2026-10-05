@@ -10,6 +10,8 @@
 #      ./build-appimage.sh --yes        # 缺依赖直接自动安装，不询问
 #      ./build-appimage.sh --no-install # 只检查依赖，缺了报错退出
 #      ./build-appimage.sh --no-readme   # 不在 dist 里生成 FUSE说明.txt
+#      ./build-appimage.sh --auto-scrcpy # 系统 scrcpy 不可用时自动源码编译到 vendor/
+#      ./build-appimage.sh --auto-scrcpy --scrcpy-version 4.1
 #      ./build-appimage.sh --clean      # 先清掉旧构建目录再构建
 #      ./build-appimage.sh --help
 #
@@ -28,6 +30,7 @@
 #      SCRCPY_BIN=/path/to/scrcpy    指定 scrcpy 可执行文件
 #      ADB_BIN=/path/to/adb          指定 adb 可执行文件
 #      SCRCPY_SERVER=/path/server    指定 scrcpy-server（jar）
+#      SCRCPY_VERSION=4.1            --auto-scrcpy 时编译哪个版本（默认最新）
 # ============================================================================
 
 set -euo pipefail
@@ -105,6 +108,144 @@ apt_install() {
     $SUDO apt-get install -y "$@"
 }
 
+# 逐个安装一组包：apt 是"全成功或全失败"，一个个来更稳，装不上的只警告
+apt_install_optional() {
+    local pkg
+    for pkg in "$@"; do
+        if command -v dpkg >/dev/null 2>&1 && dpkg -s "$pkg" >/dev/null 2>&1; then
+            continue
+        fi
+        if apt_install "$pkg" >/dev/null 2>&1; then
+            info "  已安装 $pkg"
+        else
+            warn "  装不上 $pkg（这个发行版可能没有），继续"
+        fi
+    done
+}
+
+# 读取 scrcpy 的版本号（major.minor）
+read_scrcpy_ver() {
+    "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1 || true
+}
+
+# scrcpy 能否用于打包：能执行、版本 >= 2.2、不是 snap
+scrcpy_usable() {
+    local bin="$1" ver maj min
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+        return 1
+    fi
+    ver="$(read_scrcpy_ver "$bin")"
+    if [ -z "$ver" ]; then
+        return 1
+    fi
+    maj="${ver%%.*}"
+    min="${ver##*.}"
+    if [ "$maj" -lt 2 ] || { [ "$maj" -eq 2 ] && [ "$min" -lt 2 ]; }; then
+        return 1
+    fi
+    if ldd "$bin" 2>/dev/null | grep -q '/snap/'; then
+        return 1
+    fi
+    return 0
+}
+
+# 取 GitHub 仓库最新 release 的 tag_name
+github_latest_tag() {
+    curl -fsSL --max-time 25 "$1" 2>/dev/null \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        | head -1 || true
+}
+
+# 从源码编译 scrcpy 到项目 vendor/scrcpy（不污染系统，删 vendor 即卸载）
+build_scrcpy_from_source() {
+    local ver="$SCRCPY_VERSION" tarball src server_url sdlver sdlurl
+
+    mkdir -p "$VENDOR_DIR"
+
+    if [ -z "$ver" ]; then
+        info "查询 scrcpy 最新版本…"
+        ver="$(github_latest_tag https://api.github.com/repos/Genymobile/scrcpy/releases/latest)"
+        ver="${ver#v}"
+    fi
+    if [ -z "$ver" ]; then
+        die "无法确定 scrcpy 版本（多半是网络 / 系统代理问题）。可手动指定版本：
+     ./build-appimage.sh --auto-scrcpy --scrcpy-version 4.1"
+    fi
+    info "目标版本：v$ver"
+
+    info "安装编译依赖（已有的会跳过）…"
+    apt_install_optional meson ninja-build pkg-config cmake gcc g++ make tar \
+        libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+        libusb-1.0-0-dev
+
+    # SDL3：先试发行版包，装不上就自己编到 vendor/sdl3（老发行版走这条路）
+    if ! pkg-config --exists sdl3 2>/dev/null; then
+        info "系统里没有 SDL3，先尝试发行版包…"
+        apt_install_optional libsdl3-dev
+    fi
+    if ! pkg-config --exists sdl3 2>/dev/null; then
+        info "发行版没有 SDL3（Ubuntu 22.04 等老版本常见），改为自行编译到 vendor/sdl3"
+        info "这是整个流程最耗时的一步，请耐心等待…"
+        sdlver="$(github_latest_tag https://api.github.com/repos/libsdl-org/SDL/releases/latest)"
+        sdlver="${sdlver#release-}"
+        [ -n "$sdlver" ] || die "无法确定 SDL3 版本，请检查网络 / 系统代理"
+        info "SDL3 版本：$sdlver"
+        sdlurl="https://github.com/libsdl-org/SDL/releases/download/release-$sdlver/SDL3-$sdlver.tar.gz"
+        curl -fL --retry 2 --max-time 900 -o "$VENDOR_DIR/sdl3.tar.gz" "$sdlurl" \
+            || die "SDL3 下载失败：$sdlurl"
+        rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build"
+        mkdir -p "$VENDOR_DIR/sdl3-src"
+        tar -xzf "$VENDOR_DIR/sdl3.tar.gz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
+            || die "SDL3 解压失败"
+        cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
+            -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF >/dev/null \
+            || die "SDL3 的 cmake 配置失败"
+        cmake --build "$VENDOR_DIR/sdl3-build" -j"$(nproc)" >/dev/null \
+            || die "SDL3 编译失败"
+        cmake --install "$VENDOR_DIR/sdl3-build" >/dev/null || die "SDL3 安装失败"
+        rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.gz"
+        info "SDL3 已装到 $VENDOR_SDL3"
+    fi
+
+    export PKG_CONFIG_PATH="$VENDOR_SDL3/lib/pkgconfig:$VENDOR_SDL3/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export LD_LIBRARY_PATH="$VENDOR_LIB_DIRS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+    info "下载 scrcpy-server v$ver…"
+    server_url="https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-server-v$ver"
+    curl -fL --retry 2 --max-time 600 -o "$VENDOR_SERVER" "$server_url" \
+        || die "scrcpy-server 下载失败：$server_url
+     请确认 v$ver 存在：https://github.com/Genymobile/scrcpy/releases"
+
+    info "下载 scrcpy v$ver 源码…"
+    tarball="$VENDOR_DIR/scrcpy-$ver.tar.gz"
+    src="$VENDOR_DIR/scrcpy-src"
+    curl -fL --retry 2 --max-time 600 -o "$tarball" \
+        "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.gz" \
+        || die "scrcpy 源码下载失败（确认 v$ver 存在）"
+    rm -rf "$src"
+    mkdir -p "$src"
+    tar -xzf "$tarball" -C "$src" --strip-components=1 || die "scrcpy 源码解压失败"
+    rm -f "$tarball"
+
+    info "配置并编译（几分钟）…"
+    rm -rf "$src/build"
+    if ! ( cd "$src" && meson setup build --buildtype=release \
+            --prefix="$VENDOR_SCRCPY" -Dprebuilt_server="$VENDOR_SERVER" ); then
+        die "meson setup 失败。常见原因：
+     · 缺少 sdl3（本脚本应已自动处理，可检查上面的 pkg-config 输出）
+     · meson 版本太旧 → pipx install meson 后重试，见 docs/BUILD.md 第 7.3 节"
+    fi
+    ninja -C "$src/build" || die "scrcpy 编译失败"
+    ninja -C "$src/build" install || die "scrcpy 安装失败"
+    rm -rf "$src"
+
+    if [ ! -x "$VENDOR_SCRCPY/bin/scrcpy" ]; then
+        die "编译流程结束，但没找到 $VENDOR_SCRCPY/bin/scrcpy，请把上面的输出发出来"
+    fi
+    info "scrcpy 已编译并安装到项目目录：$VENDOR_SCRCPY"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GUI_PY="$SCRIPT_DIR/scrcpy-gui-zh.py"
 ICON_SRC="$SCRIPT_DIR/assets/scrcpy-gui-zh.png"
@@ -115,6 +256,13 @@ DIST_DIR="$SCRIPT_DIR/dist"
 APP_ID="scrcpy-gui-zh"
 APP_VER="1.0.0"
 
+# 项目内的 vendor 目录：--auto-scrcpy 编译出来的东西都装在这里，不污染系统
+VENDOR_DIR="$SCRIPT_DIR/vendor"
+VENDOR_SCRCPY="$VENDOR_DIR/scrcpy"
+VENDOR_SDL3="$VENDOR_DIR/sdl3"
+VENDOR_SERVER="$VENDOR_DIR/scrcpy-server"
+VENDOR_LIB_DIRS="$VENDOR_SDL3/lib:$VENDOR_SCRCPY/lib"
+
 # 不能打进包的库：glibc 全家桶 + 显卡驱动栈（必须用宿主机的）
 EXCLUDE_RE='^(ld-linux.*|libc\.so.*|libc-[0-9].*|libpthread.*|libdl\.so.*|libm\.so.*|librt\.so.*|libresolv.*|libnss_.*|libGL.*|libEGL.*|libGLX.*|libGLdispatch.*|libOpenGL.*|libdrm.*|libgbm.*|libvulkan.*)$'
 
@@ -122,17 +270,30 @@ CLEAN=0
 AUTO_INSTALL=1     # 缺少系统依赖时是否允许自动安装
 ASSUME_YES=0       # 是否跳过安装询问
 MAKE_README=1      # 是否在 dist 里生成 FUSE说明.txt
+AUTO_SCRCPY=0      # 系统 scrcpy 不可用时是否自动源码编译
+SCRCPY_VERSION="${SCRCPY_VERSION:-}"   # 自动编译时用哪个版本（空=最新）
 
-for arg in "$@"; do
+while [ "$#" -gt 0 ]; do
+    arg="$1"
     case "$arg" in
-        --clean)      CLEAN=1 ;;
-        --yes|-y)     ASSUME_YES=1 ;;
-        --no-install) AUTO_INSTALL=0 ;;
-        --no-readme)  MAKE_README=0 ;;
+        --clean)      CLEAN=1; shift ;;
+        --yes|-y)     ASSUME_YES=1; shift ;;
+        --no-install) AUTO_INSTALL=0; shift ;;
+        --no-readme)  MAKE_README=0; shift ;;
+        --auto-scrcpy) AUTO_SCRCPY=1; shift ;;
+        --scrcpy-version)
+            if [ "$#" -lt 2 ]; then
+                die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
+            fi
+            SCRCPY_VERSION="$2"
+            shift 2 ;;
+        --scrcpy-version=*) SCRCPY_VERSION="${arg#*=}"; shift ;;
         -h|--help)
-            sed -n '2,31p' "${BASH_SOURCE[0]}"
+            sed -n '2,34p' "${BASH_SOURCE[0]}"
             exit 0 ;;
-        *) die "未知参数：$arg（可用：--clean / --yes / --no-install / --no-readme / --help）" ;;
+        *) die "未知参数：$arg
+     可用：--clean / --yes / --no-install / --no-readme / --auto-scrcpy
+           --scrcpy-version <版本> / --help" ;;
     esac
 done
 
@@ -286,9 +447,9 @@ info "目标架构：$ARCH_TAG    glibc：$(ldd --version | head -1 | awk '{prin
 info "python3：$(python3 --version 2>&1)"
 
 # ---------------------------------------------------------------------------
-# 2. 找到 scrcpy / adb / scrcpy-server
+# 2. 获取 scrcpy / adb / scrcpy-server（必要时自动源码编译 scrcpy）
 # ---------------------------------------------------------------------------
-step "2/9 查找 scrcpy、adb、scrcpy-server"
+step "2/9 获取 scrcpy、adb、scrcpy-server"
 
 find_first() {
     local p
@@ -328,7 +489,7 @@ MISSING_PKGS=()
 MISSING_DESC=()
 if [ -z "$SCRCPY_BIN" ]; then
     MISSING_PKGS+=("scrcpy")
-    MISSING_DESC+=("scrcpy 未安装（构建必需）—— 提醒：老发行版源里的版本太旧，无法投屏 Android 14+，见 docs/BUILD.md")
+    MISSING_DESC+=("scrcpy 未安装（构建必需）")
 fi
 if [ -z "$ADB_BIN" ]; then
     MISSING_PKGS+=("adb")
@@ -339,35 +500,25 @@ if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
     locate_scrcpy || true
     locate_adb || true
 fi
-if [ -z "$SCRCPY_BIN" ]; then
-    die "仍然找不到 scrcpy。可手动指定：SCRCPY_BIN=/usr/local/bin/scrcpy ./build-appimage.sh
-     老发行版建议源码编译（源里的版本无法投屏 Android 14+），见 docs/BUILD.md"
-fi
 if [ -z "$ADB_BIN" ]; then
     die "仍然找不到 adb。可手动指定：ADB_BIN=/usr/bin/adb ./build-appimage.sh"
 fi
 
-SCRCPY_VER="$("$SCRCPY_BIN" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)"
-info "scrcpy：$SCRCPY_BIN（版本 ${SCRCPY_VER:-未知}）"
-info "adb   ：$ADB_BIN"
-
-if [ -n "$SCRCPY_VER" ]; then
-    major="${SCRCPY_VER%%.*}"
-    minor="${SCRCPY_VER##*.}"
-    if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 2 ]; }; then
-        warn "scrcpy $SCRCPY_VER 无法投屏 Android 14 及以上系统！"
-        warn "建议先升级到 3.x/4.x（源码编译，见 docs/BUILD.md）再打包。"
-        warn "继续将打包这个旧版本。按 Ctrl+C 中止，或等 10 秒继续…"
-        sleep 10
-    fi
+# ---- 判断系统里这个 scrcpy 能不能用来打包 ----
+SCRCPY_VER=""
+SCRCPY_REASON=""     # missing / snap / old / server
+if [ -n "$SCRCPY_BIN" ]; then
+    SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
+fi
+if [ -z "$SCRCPY_BIN" ]; then
+    SCRCPY_REASON="missing"
+elif ldd "$SCRCPY_BIN" 2>/dev/null | grep -q '/snap/'; then
+    SCRCPY_REASON="snap"
+elif ! scrcpy_usable "$SCRCPY_BIN"; then
+    SCRCPY_REASON="old"
 fi
 
-if ldd "$SCRCPY_BIN" 2>/dev/null | grep -q '/snap/'; then
-    die "检测到 $SCRCPY_BIN 是 snap 版本（依赖指向 /snap/），无法打包。
-     请改用源码编译的版本（一般装在 /usr/local/bin/scrcpy），步骤见 docs/BUILD.md。
-     也可以直接指定：SCRCPY_BIN=/usr/local/bin/scrcpy ./build-appimage.sh"
-fi
-
+# ---- scrcpy-server（推给手机的 jar）----
 SERVER_SRC="${SCRCPY_SERVER:-}"
 if [ -z "$SERVER_SRC" ]; then
     for p in /usr/local/share/scrcpy/scrcpy-server \
@@ -383,12 +534,65 @@ fi
 if [ -z "$SERVER_SRC" ] && command -v dpkg >/dev/null 2>&1; then
     SERVER_SRC="$(dpkg -L scrcpy 2>/dev/null | grep -m1 'scrcpy-server$' || true)"
 fi
-if [ -z "$SERVER_SRC" ] || [ ! -f "$SERVER_SRC" ]; then
-    die "找不到 scrcpy-server（推送到手机的 jar）。可手动指定：
-     SCRCPY_SERVER=/路径/scrcpy-server ./build-appimage.sh
-   也可从发布页下载（文件名形如 scrcpy-server-vX.Y）：
-     https://github.com/Genymobile/scrcpy/releases"
+if [ -n "$SERVER_SRC" ] && [ ! -f "$SERVER_SRC" ]; then
+    SERVER_SRC=""
 fi
+if [ -z "$SERVER_SRC" ] && [ -z "$SCRCPY_REASON" ]; then
+    SCRCPY_REASON="server"
+fi
+
+# ---- 有问题就用项目里编译好的，或者按需自动编译 ----
+if [ -n "$SCRCPY_REASON" ]; then
+    case "$SCRCPY_REASON" in
+        missing) warn "系统里没有 scrcpy" ;;
+        snap)    warn "系统里的 scrcpy 是 snap 版本（依赖 snap 私有 glibc，无法打包）" ;;
+        old)     warn "系统里的 scrcpy 版本 ${SCRCPY_VER:-未知} 太旧（低于 2.2，投不了 Android 14+）" ;;
+        server)  warn "找不到 scrcpy-server（缺少它无法投屏）" ;;
+    esac
+
+    if [ -x "$VENDOR_SCRCPY/bin/scrcpy" ] \
+       && [ -f "$VENDOR_SCRCPY/share/scrcpy/scrcpy-server" ]; then
+        info "改用项目内已编译好的 scrcpy：$VENDOR_SCRCPY"
+        SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
+        SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
+        SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
+        SCRCPY_REASON=""
+    elif [ "$AUTO_SCRCPY" -eq 1 ]; then
+        info "启用 --auto-scrcpy：从源码编译 scrcpy 到项目 vendor/（不污染系统）"
+        build_scrcpy_from_source
+        SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
+        SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
+        SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
+        SCRCPY_REASON=""
+    else
+        warn "提示：加上 --auto-scrcpy 可以让本脚本自动源码编译 scrcpy 到项目 vendor/ 目录，"
+        warn "      也可以手动指定：SCRCPY_BIN=/usr/local/bin/scrcpy SCRCPY_SERVER=/路径/scrcpy-server"
+        case "$SCRCPY_REASON" in
+            old)
+                warn "继续将打包这个旧版本。按 Ctrl+C 中止，或等 10 秒继续…"
+                sleep 10 ;;
+            snap)
+                die "snap 版 scrcpy 无法打包。请源码编译（docs/BUILD.md 第 7 节），
+     或加 --auto-scrcpy 让本脚本自动编译。" ;;
+            *)
+                die "没有可用的 scrcpy，无法继续。三种解法：
+     1) ./build-appimage.sh --auto-scrcpy            （自动源码编译到项目 vendor/）
+     2) 先手动源码编译，见 docs/BUILD.md 第 7 节
+     3) 手动指定已有版本：SCRCPY_BIN=... ADB_BIN=... SCRCPY_SERVER=... ./build-appimage.sh" ;;
+        esac
+    fi
+fi
+
+if [ -z "$SERVER_SRC" ] || [ ! -f "$SERVER_SRC" ]; then
+    die "找不到 scrcpy-server（推送到手机的 jar）。三种解法：
+     1) ./build-appimage.sh --auto-scrcpy            （会自动下载匹配版本）
+     2) SCRCPY_SERVER=/路径/scrcpy-server ./build-appimage.sh
+     3) 从发布页下载（文件名形如 scrcpy-server-vX.Y）：
+        https://github.com/Genymobile/scrcpy/releases"
+fi
+
+info "scrcpy：$SCRCPY_BIN（版本 ${SCRCPY_VER:-未知}）"
+info "adb   ：$ADB_BIN"
 info "server：$SERVER_SRC（$(stat -c%s "$SERVER_SRC") 字节）"
 
 # ---------------------------------------------------------------------------
@@ -455,7 +659,9 @@ copy_libs() {
         if [ ! -e "$dest/$base" ]; then
             cp -L "$lib" "$dest/$base"
         fi
-    done < <(ldd "$bin" 2>/dev/null | awk '/=>/ {print $3} $1 ~ /^\// {print $1}' | sort -u)
+    done < <(LD_LIBRARY_PATH="$VENDOR_LIB_DIRS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+             ldd "$bin" 2>/dev/null \
+             | awk '/=>/ {print $3} $1 ~ /^\// {print $1}' | sort -u)
 }
 
 cp -L "$SCRCPY_BIN" "$APPDIR/usr/bin/scrcpy"

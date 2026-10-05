@@ -42,8 +42,24 @@
 
 ### 方式 A：Linux AppImage（免安装，推荐分发）
 
+**先解决 scrcpy 从哪来。** Linux 上 scrcpy 官方**不提供预编译二进制**，而发行版源里
+的版本通常太旧（Ubuntu 22.04 → 1.21、24.04 → 1.25，都投不了 Android 14+），
+snap 版又因为链接 snap 私有 glibc 而无法打包。所以：
+
+| 方式 | 你要做什么 | scrcpy 的位置 |
+|---|---|---|
+| **① 自动编译（推荐）** | 加 `--auto-scrcpy` | 脚本自动装依赖 → 缺 SDL3 就编 SDL3 → 编 scrcpy → 装到 **`项目/vendor/scrcpy/`** |
+| ② 系统里已有可用的 | 什么都不做 | 版本 ≥ 2.2 且非 snap 时直接使用 |
+| ③ 手动编译 | 见 [docs/BUILD.md](docs/BUILD.md) 第 7 节 | 用 `SCRCPY_BIN=` 指定路径 |
+
 ```bash
-# 在项目目录里构建（需要 Linux，详见 docs/BUILD.md）
+# 全自动：连 scrcpy 都帮你编译好（首次约 10–20 分钟，主要在编 SDL3）
+./build-appimage.sh --auto-scrcpy --clean
+
+# 指定要编译的 scrcpy 版本
+./build-appimage.sh --auto-scrcpy --scrcpy-version 4.1
+
+# 系统里已有合适版本时，直接构建
 ./build-appimage.sh --clean
 
 # 缺少系统依赖时会列出清单并询问是否自动安装（apt）
@@ -54,6 +70,10 @@
 chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
 ./dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
 ```
+
+> `--auto-scrcpy` 编译出来的东西全在 **`项目/vendor/`**（scrcpy + 必要时自编的 SDL3），
+> 不写系统目录、不需要管理员权限，**删掉 `vendor` 即卸载**；第二次构建直接复用。
+> `vendor/` 已在 `.gitignore` 里。
 
 首次启动若检测到 USB 权限不足，会弹窗提供**一键修复**（输入一次系统密码）。
 
