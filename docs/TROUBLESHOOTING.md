@@ -249,6 +249,53 @@ scrcpy 也没有 `--bluetooth` 之类的选项。
 
 ## 5. Linux 打包 / 运行问题
 
+### 5.0 构建第 7 步失败：`This doesn't look like a squashfs image`
+
+```
+==> 7/9 生成 AppImage
+[信息] 下载 appimagetool（x86_64）…
+[注意] appimagetool 无法直接运行（多半缺 FUSE），改用解压模式
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome...
+This doesn't look like a squashfs image.
+Failed to open squashfs image
+Failed to extract AppImage
+```
+
+这是 **appimagetool 本身的问题**，不是你的配置问题。appimagetool 是一个「打包在
+AppImage 里的 Qt 程序」，要先自解压再运行，再去找它内嵌的 runtime —— 任何一环
+出问题都会以这几行报错收场。
+
+**现在的脚本已经不依赖它了**：第 7 步改成用
+
+```bash
+mksquashfs AppDir out.squashfs -root-owned -noappend -comp gzip
+cat runtime-x86_64 out.squashfs > out.AppImage
+```
+
+手工组装（`runtime` 是一个约 1MB 的普通 ELF，不是 AppImage）。这条路径**不需要
+Qt、不需要 FUSE、也不需要 AppImage 套 AppImage**。appimagetool 只在手工路径
+不可用时才作为备选，并且下载后会校验文件是不是真的 ELF。
+
+手工路径的两个前提，脚本会自动处理：
+
+| 前提 | 处理方式 |
+|---|---|
+| `mksquashfs` | 自动 `apt install squashfs-tools` |
+| AppImage runtime | 自动从 `AppImage/type2-runtime` 或 `AppImageKit` 下载并校验 ELF 头 |
+
+如果两条路径都失败，脚本会把「第 8 步解包自检」的失败当作硬错误直接终止，
+不会交付一个坏产物。
+
+**自查下载是否被破坏**：
+
+```bash
+ls -l build-appimage/runtime-x86_64
+file build-appimage/runtime-x86_64          # 必须是 ELF，不能是 HTML/文本
+head -c 64 build-appimage/runtime-x86_64 | od -c | head -3
+```
+
+若 `file` 显示的是文本/HTML，说明代理或网络把下载内容换掉了，换网络或关掉代理重试。
+
 ### 5.1 AppImage 报 FUSE 错误
 
 ```

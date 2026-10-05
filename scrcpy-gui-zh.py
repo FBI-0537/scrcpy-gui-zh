@@ -254,6 +254,12 @@ def find_udev_script():
         os.path.join(base, UDEV_SCRIPT_NAME),
         os.path.abspath(os.path.join(base, "..", UDEV_SCRIPT_NAME)),
     ]
+    # PyInstaller onefile：文件在运行时解压目录里
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidates.append(os.path.join(meipass, UDEV_SCRIPT_NAME))
+        candidates.append(os.path.join(meipass, "share", "scrcpy-gui-zh",
+                                       UDEV_SCRIPT_NAME))
     appdir = os.environ.get("APPDIR", "")
     if appdir:
         candidates.append(os.path.join(appdir, "usr/share/scrcpy-gui-zh",
@@ -1499,6 +1505,10 @@ class ScrcpyGui:
                 "系统里没有 pkexec（polkit），无法自动提权。\n\n"
                 "请在终端手动执行：\nsudo %s" % script)
             return
+        try:
+            os.chmod(script, 0o755)      # 打包后可能丢掉可执行位，pkexec 会拒绝
+        except OSError:
+            pass
         self.log("正在请求提权安装 USB 权限：%s" % script)
         self.log("（会弹出系统密码框，取消则不会做任何改动）")
         threading.Thread(target=self._pkexec_worker, args=(script,),
@@ -1532,7 +1542,56 @@ class ScrcpyGui:
         self.root.destroy()
 
 
+def selftest():
+    """构建后自检：确认打包进来的 scrcpy / adb / server / udev 脚本都在且能跑。
+
+    用 `--selftest` 调用，不需要图形界面（构建脚本用它做端到端验证）。
+    退出码 0 表示全部就绪。
+    """
+    env = child_env()
+    ok = True
+    print("scrcpy-gui-zh 自检")
+    print("  运行方式     : %s" % ("PyInstaller 打包" if getattr(sys, "frozen", False)
+                                   else "源码运行"))
+    if getattr(sys, "frozen", False):
+        print("  解压目录     : %s" % getattr(sys, "_MEIPASS", "-"))
+
+    server = env.get("SCRCPY_SERVER_PATH", "")
+    checks = [
+        ("scrcpy", SCRCPY),
+        ("adb", ADB),
+        ("scrcpy-server", server),
+    ]
+    if not IS_WIN:          # udev 规则脚本只在 Linux 侧有意义
+        checks.append(("install-udev.sh", find_udev_script()))
+    for name, path in checks:
+        if path and os.path.exists(path):
+            print("  [OK] %-16s %s" % (name, path))
+        else:
+            print("  [缺] %-16s %s" % (name, path or "未找到"))
+            ok = False
+
+    if SCRCPY:
+        ver = scrcpy_version()
+        if ver:
+            print("  scrcpy 版本  : %d.%d" % ver)
+            if ver < (2, 2):
+                print("  [警告] 该版本无法投屏 Android 14 及以上系统")
+        else:
+            print("  [失败] scrcpy 跑不起来（多半是依赖库没打进去）")
+            ok = False
+
+    print("  结果         : %s" % ("通过" if ok else "失败"))
+    return 0 if ok else 1
+
+
 def main():
+    if "--selftest" in sys.argv:
+        sys.exit(selftest())
+    if "--version" in sys.argv:
+        print("scrcpy-gui-zh 1.0.0")
+        sys.exit(0)
+
     root = tk.Tk()
     app = ScrcpyGui(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)

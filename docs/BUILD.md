@@ -11,7 +11,8 @@
 |---|---|---|---|---|
 | 源码直接运行 | 无 | 任意有 Python 3 + tkinter | ✅ 需要 scrcpy / adb | 天然跨 |
 | Windows exe | `build-windows.ps1` | Windows | ❌（可选连 scrcpy 一起带） | 不涉及 |
-| Linux AppImage | `build-appimage.sh` | Linux（x86_64 / aarch64） | ❌ 全内置 | **必须各打一次** |
+| **Linux 单个可执行文件** | `build-linux.sh` | Linux（x86_64 / aarch64） | ❌ 全内置，**不需要 FUSE** | **必须各打一次** |
+| Linux AppImage | `build-appimage.sh` | Linux（x86_64 / aarch64） | ❌ 全内置，需要 FUSE | **必须各打一次** |
 
 **硬约束（先看清再动手）**
 
@@ -188,9 +189,56 @@ python -m PyInstaller --noconsole --onefile --clean `
 
 ---
 
-## 5. 方式三：Linux AppImage
+## 5. 方式三：Linux 产物（单个可执行文件 / AppImage）
 
-### 5.1 一键脚本
+Linux 侧有两种产物，**默认推荐单个可执行文件**：
+
+| 产物 | 脚本 | 命令 | 特点 |
+|---|---|---|---|
+| **单个可执行文件** | `build-linux.sh` | `./build-linux.sh --clean` | 一个 ELF 文件，**不需要 FUSE**；每次启动解压到 `/tmp`（3–10 秒） |
+| AppImage | `build-appimage.sh` | `./build-appimage.sh --clean` | 一个 `.AppImage`，压缩过、挂载运行；**需要 FUSE**（或加 `--appimage-extract-and-run`） |
+
+两者的 `scrcpy` 获取方式完全一样（系统里的 / 项目 `vendor/scrcpy/` /
+`--auto-scrcpy` 自动编译）。
+
+### 5.0 单个可执行文件（`build-linux.sh`，推荐）
+
+用 PyInstaller `--onefile` 打包，内容与 AppImage 完全一致：
+
+```
+Python 解释器 + Tcl/Tk + 界面程序 + segno
++ scrcpy + adb + 全部依赖 .so
++ scrcpy-server + install-udev.sh
+```
+
+关键实现：
+
+| 项目 | 做法 |
+|---|---|
+| scrcpy / adb | `--add-binary <路径>:.` → 解压后落在 `_MEIPASS` 根目录 |
+| 依赖 `.so` | 先 `ldd` 收集到 `build-linux/libs/`，再逐个 `--add-binary` |
+| scrcpy-server | `--add-data <server>:share/scrcpy` → 程序自动设 `SCRCPY_SERVER_PATH` |
+| udev 脚本 | `--add-data <install-udev.sh>:.` |
+| 运行时环境 | 程序内的 `child_env()` 把 `_MEIPASS` 加进 `PATH` / `LD_LIBRARY_PATH`，并设好 `SCRCPY_SERVER_PATH` |
+| **端到端自检** | 打包后执行 `./dist/xxx --selftest`，逐项确认组件存在，并**真的运行 `scrcpy --version`** 验证依赖库可用；不通过就终止 |
+
+```bash
+./build-linux.sh --yes --clean                    # 缺依赖自动装
+./build-linux.sh --auto-scrcpy --yes --clean      # 连 scrcpy 都自动编译
+./build-linux.sh --auto-scrcpy --scrcpy-version 4.1
+./build-linux.sh --no-install --clean             # 只检查依赖，不改系统
+./build-linux.sh --appimage                       # 转去调用 build-appimage.sh
+```
+
+产物：`dist/scrcpy-gui-zh-1.0.0-x86_64`（约 150–250 MB，未压缩）。
+
+**两个注意事项**：
+
+1. **每次启动会解压到 `/tmp`**，体积越大越慢（3–10 秒）。若目标机把 `/tmp`
+   挂载为 `noexec`，单文件方式无法运行，请改用 AppImage。
+2. **glibc 下限依旧**：产物只能在 glibc ≥ 构建机的系统上跑。
+
+### 5.1 AppImage：一键脚本
 
 ```bash
 chmod +x build-appimage.sh install-udev.sh
@@ -300,7 +348,7 @@ SCRCPY_SERVER=/path/to/scrcpy-server-v4.1 \
 | 4 | venv 里装 PyInstaller + segno，`--onedir` 打包界面 | 网络（pip 走代理失败） |
 | 5 | 复制 scrcpy / adb / server / udev 脚本，`ldd` 收集 `.so` | 依赖库收集不全（见 5.4） |
 | 6 | 写 `AppRun`、`.desktop`、图标 | — |
-| 7 | 下载 appimagetool 并打包 | 网络；缺 FUSE（会自动降级） |
+| 7 | 生成 AppImage：**首选「runtime + mksquashfs」手工组装**，appimagetool 为备选 | 下载文件被网络/代理破坏；缺 `mksquashfs` |
 | 8 | **解包自检**（不需要 FUSE） | 列出缺失项 |
 | 9 | 输出产物与使用说明 | — |
 

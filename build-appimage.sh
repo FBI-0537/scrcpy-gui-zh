@@ -718,42 +718,127 @@ cp "$ICON_SRC" "$APPDIR/.DirIcon"
 cp -a "$APPDIR/$APP_ID.desktop" "$APPDIR/usr/share/applications/"
 
 # ---------------------------------------------------------------------------
-# 7. 取 appimagetool 并生成 AppImage
+# 7. 生成 AppImage
+#   首选：AppImage runtime + mksquashfs 手工组装 —— 不依赖 Qt、不依赖 FUSE、
+#         也不用把 AppImage 套在 AppImage 里，是这个流程里最稳的做法。
+#   备选：appimagetool（下载后会校验是不是真的 ELF，并显式指定 runtime）
 # ---------------------------------------------------------------------------
 step "7/9 生成 AppImage"
 
-TOOL="$BUILD_ROOT/appimagetool-$ARCH_TAG.AppImage"
-if [ ! -x "$TOOL" ]; then
-    info "下载 appimagetool（$ARCH_TAG）…"
-    URL1="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH_TAG.AppImage"
-    URL2="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$ARCH_TAG.AppImage"
-    ok=0
-    for u in "$URL1" "$URL2"; do
-        if curl -fL --retry 2 -o "$TOOL" "$u" 2>/dev/null && [ -s "$TOOL" ]; then
-            ok=1
-            break
-        fi
-        warn "下载失败，换下一个源…"
-    done
-    if [ "$ok" -ne 1 ]; then
-        die "appimagetool 下载失败。可手动下载后放到：$TOOL
-     下载页：https://github.com/AppImage/appimagetool/releases"
-    fi
-    chmod +x "$TOOL"
-fi
-
-if "$TOOL" --version >/dev/null 2>&1; then
-    TOOL_CMD=("$TOOL")
-else
-    warn "appimagetool 无法直接运行（多半缺 FUSE），改用解压模式"
-    TOOL_CMD=("$TOOL" --appimage-extract-and-run)
-fi
-
 OUT="$DIST_DIR/$APP_ID-$APP_VER-$ARCH_TAG.AppImage"
-rm -f "$OUT"
-info "打包中…"
-ARCH="$ARCH_TAG" "${TOOL_CMD[@]}" --no-appstream "$APPDIR" "$OUT" >/dev/null
-chmod +x "$OUT"
+SQFS="$BUILD_ROOT/$APP_ID.squashfs"
+RUNTIME="$BUILD_ROOT/runtime-$ARCH_TAG"
+rm -f "$OUT" "$SQFS"
+
+# 下载 AppImage runtime（一个约 1MB 的普通 ELF，不是 AppImage）
+fetch_runtime() {
+    local u
+    if [ -x "$RUNTIME" ] && file -b "$RUNTIME" 2>/dev/null | grep -qi 'ELF'; then
+        return 0
+    fi
+    rm -f "$RUNTIME"
+    info "下载 AppImage runtime（$ARCH_TAG，约 1MB）…"
+    for u in \
+        "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$ARCH_TAG" \
+        "https://github.com/AppImage/AppImageKit/releases/download/continuous/runtime-$ARCH_TAG"
+    do
+        if curl -fL --retry 2 --max-time 300 -o "$RUNTIME" "$u" 2>/dev/null \
+           && [ -s "$RUNTIME" ] \
+           && file -b "$RUNTIME" 2>/dev/null | grep -qi 'ELF'; then
+            chmod +x "$RUNTIME"
+            info "runtime 就绪：$RUNTIME"
+            return 0
+        fi
+        warn "这个源不可用，换下一个：$u"
+        rm -f "$RUNTIME"
+    done
+    return 1
+}
+
+build_with_mksquashfs() {
+    if ! command -v mksquashfs >/dev/null 2>&1; then
+        info "安装 squashfs-tools（提供 mksquashfs）…"
+        apt_install squashfs-tools >/dev/null 2>&1 || true
+    fi
+    if ! command -v mksquashfs >/dev/null 2>&1; then
+        warn "没有 mksquashfs，跳过这条路径"
+        return 1
+    fi
+    if ! fetch_runtime; then
+        warn "拿不到可用的 AppImage runtime"
+        return 1
+    fi
+
+    info "用 mksquashfs 打包 AppDir（约 1-3 分钟）…"
+    rm -f "$SQFS"
+    if ! mksquashfs "$APPDIR" "$SQFS" -root-owned -noappend -comp gzip -no-progress >/dev/null; then
+        warn "mksquashfs 失败"
+        return 1
+    fi
+    info "把 runtime 与 squashfs 拼接成 AppImage…"
+    if ! cat "$RUNTIME" "$SQFS" > "$OUT"; then
+        warn "拼接失败"
+        return 1
+    fi
+    rm -f "$SQFS"
+    chmod +x "$OUT"
+    return 0
+}
+
+build_with_appimagetool() {
+    local TOOL="$BUILD_ROOT/appimagetool-$ARCH_TAG.AppImage" u ok=0 RUN_ARG=""
+    if [ ! -x "$TOOL" ] || ! file -b "$TOOL" 2>/dev/null | grep -qi 'ELF'; then
+        rm -f "$TOOL"
+        info "下载 appimagetool（$ARCH_TAG）…"
+        for u in \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH_TAG.AppImage" \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$ARCH_TAG.AppImage"
+        do
+            if curl -fL --retry 2 --max-time 300 -o "$TOOL" "$u" 2>/dev/null \
+               && [ -s "$TOOL" ] \
+               && file -b "$TOOL" 2>/dev/null | grep -qi 'ELF'; then
+                ok=1
+                break
+            fi
+            warn "下载失败或文件不是 ELF，换下一个源…"
+            rm -f "$TOOL"
+        done
+        if [ "$ok" -ne 1 ]; then
+            warn "appimagetool 下载失败或文件无效（可能被代理/网络破坏）"
+            return 1
+        fi
+        chmod +x "$TOOL"
+    fi
+
+    # 显式给 appimagetool 指定 runtime，避免它自己找不到内嵌 runtime
+    if fetch_runtime; then
+        RUN_ARG="--runtime-file $RUNTIME"
+    fi
+
+    if "$TOOL" --version >/dev/null 2>&1; then
+        ARCH="$ARCH_TAG" "$TOOL" $RUN_ARG --no-appstream "$APPDIR" "$OUT" >/dev/null || return 1
+    else
+        warn "appimagetool 无法直接运行，改用解压模式"
+        ARCH="$ARCH_TAG" "$TOOL" --appimage-extract-and-run $RUN_ARG \
+            --no-appstream "$APPDIR" "$OUT" >/dev/null || return 1
+    fi
+    if [ ! -s "$OUT" ]; then
+        return 1
+    fi
+    chmod +x "$OUT"
+    return 0
+}
+
+if build_with_mksquashfs; then
+    info "已用「runtime + mksquashfs」生成：$OUT"
+elif build_with_appimagetool; then
+    info "已用 appimagetool 生成：$OUT"
+else
+    die "两条打包路径都失败了，请把上面的完整输出发出来。
+     也可以先手动确认网络是否正常：
+       curl -fL -o /tmp/rt https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$ARCH_TAG
+       file /tmp/rt    # 应显示 ELF 64-bit"
+fi
 
 # ---------------------------------------------------------------------------
 # 8. 解包自检（不需要 FUSE）
@@ -782,7 +867,12 @@ if ( cd "$VERIFY_DIR" && "$OUT" --appimage-extract >/dev/null 2>&1 ); then
         warn "自检发现缺失项，目标机可能无法运行"
     fi
 else
-    warn "无法解包自检（跳过），不影响产物本身"
+    warn "解包自检失败 —— 生成的 AppImage 有问题，不交付这个产物："
+    warn "  文件：$OUT"
+    warn "  大小：$(du -h "$OUT" 2>/dev/null | cut -f1)"
+    warn "  类型：$(file -b "$OUT" 2>/dev/null | cut -c1-70)"
+    rm -rf "$VERIFY_DIR"
+    die "自检不通过。请把上面的完整输出发出来（这一步能筛掉下载被破坏、拼接失败等情况）"
 fi
 rm -rf "$VERIFY_DIR"
 

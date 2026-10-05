@@ -40,7 +40,10 @@
 
 ## 快速开始
 
-### 方式 A：Linux AppImage（免安装，推荐分发）
+### 方式 A：Linux 单个可执行文件（推荐）
+
+产出一个**自包含的 ELF 可执行文件**，Python / Tkinter / 界面 / scrcpy / adb /
+全部依赖库 / scrcpy-server 都在里面。**不需要 FUSE，`chmod +x` 就能跑。**
 
 **先解决 scrcpy 从哪来。** Linux 上 scrcpy 官方**不提供预编译二进制**，而发行版源里
 的版本通常太旧（Ubuntu 22.04 → 1.21、24.04 → 1.25，都投不了 Android 14+），
@@ -54,28 +57,42 @@ snap 版又因为链接 snap 私有 glibc 而无法打包。所以：
 
 ```bash
 # 全自动：连 scrcpy 都帮你编译好（首次约 10–20 分钟，主要在编 SDL3）
-./build-appimage.sh --auto-scrcpy --clean
-
-# 指定要编译的 scrcpy 版本
-./build-appimage.sh --auto-scrcpy --scrcpy-version 4.1
+./build-linux.sh --auto-scrcpy --yes --clean
 
 # 系统里已有合适版本时，直接构建
-./build-appimage.sh --clean
+./build-linux.sh --clean
 
 # 缺少系统依赖时会列出清单并询问是否自动安装（apt）
-./build-appimage.sh --yes         # 不询问，缺什么直接装
-./build-appimage.sh --no-install  # 只检查，缺了就报错退出
+./build-linux.sh --yes         # 不询问，缺什么直接装
+./build-linux.sh --no-install  # 只检查，缺了就报错退出
 
 # 目标机器
-chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
-./dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
+chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64
+./dist/scrcpy-gui-zh-1.0.0-x86_64
 ```
+
+构建脚本最后会**实际运行一次产物**（`--selftest`）来验证内嵌的 scrcpy / adb /
+server 都能用，自检不过就不交付。
+
+> **代价**：单文件程序每次启动会把自己解压到 `/tmp`（通常 3–10 秒）。
+> 如果目标机把 `/tmp` 挂成了 `noexec`，或者你更在意启动速度，
+> 就改用下面的 AppImage 方式。
 
 > `--auto-scrcpy` 编译出来的东西全在 **`项目/vendor/`**（scrcpy + 必要时自编的 SDL3），
 > 不写系统目录、不需要管理员权限，**删掉 `vendor` 即卸载**；第二次构建直接复用。
 > `vendor/` 已在 `.gitignore` 里。
 
 首次启动若检测到 USB 权限不足，会弹窗提供**一键修复**（输入一次系统密码）。
+
+### 方式 A-2：Linux AppImage（可选）
+
+要一个压缩过的单文件、且目标机有 FUSE 时用这个（AppImage 挂载运行，启动更快）：
+
+```bash
+./build-appimage.sh --auto-scrcpy --clean
+chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
+./dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
+```
 
 **关于 FUSE**：AppImage 直接运行需要系统的 `libfuse.so.2`。缺失时会在程序启动**之前**
 就报错退出（`dlopen(): error loading libfuse.so.2`），界面根本弹不出来 —— 这种
@@ -173,9 +190,10 @@ sudo apt install -y android-sdk-platform-tools-common
 
 ```
 scrcpy-gui-zh/
-├── scrcpy-gui-zh.py        主程序（单文件，约 1300 行，无第三方依赖）
+├── scrcpy-gui-zh.py        主程序（单文件，约 1600 行，无第三方依赖）
 ├── install-udev.sh         Linux USB 权限安装（一次性，需 root）
-├── build-appimage.sh       Linux AppImage 构建（x86_64 / aarch64）
+├── build-linux.sh          Linux 单个可执行文件构建（x86_64 / aarch64）
+├── build-appimage.sh       Linux AppImage 构建（可选）
 ├── build-windows.ps1       Windows exe 构建（需 UTF-8 BOM）
 ├── build-windows.cmd       Windows 构建入口（自动补 BOM，推荐用这个）
 ├── assets/

@@ -42,8 +42,21 @@
   `PKEXEC_UID` 判断真实用户；处理 `plugdev` 组不存在的情况；重载 udev 并做现状检查
 
 ### 构建
+- **新增 `build-linux.sh`：Linux 单个自包含可执行文件**（与 Windows 的 `-SingleFile`
+  对齐）。用 PyInstaller `--onefile` 把 Python + Tcl/Tk + 界面 + segno + scrcpy +
+  adb + 全部依赖 `.so` + `scrcpy-server` + `install-udev.sh` 打进一个 ELF 文件，
+  目标机器 `chmod +x` 直接运行，**不需要 FUSE**
+- 程序新增 **`--selftest`**：构建脚本会在打包后实际运行产物一次，逐项确认内嵌的
+  scrcpy / adb / scrcpy-server / install-udev.sh 都在，并真实执行 `scrcpy --version`
+  验证依赖库确实可用；自检不通过就不交付产物
+- `find_udev_script()` 支持 PyInstaller `_MEIPASS` 解压目录；`pkexec` 前会补
+  `chmod 755`（打包可能丢可执行位）
+- **AppImage 打包不再依赖 appimagetool**：改为「AppImage runtime + `mksquashfs`」
+  手工组装（`cat runtime squashfs > x.AppImage`），不需要 Qt、不需要 FUSE、
+  也不用 AppImage 套 AppImage；appimagetool 降级为备选，且下载后校验是否为 ELF。
+  第 8 步解包自检失败现在会直接终止，不再交付坏产物
 - `build-appimage.sh`：9 步流程，自动收集 `ldd` 依赖（排除 glibc 与显卡驱动栈）、
-  生成 `AppRun`/`.desktop`/图标、下载对应架构的 `appimagetool`、**解包自检**
+  生成 `AppRun`/`.desktop`/图标、**解包自检**
 - **Linux 自动准备 scrcpy（`--auto-scrcpy`）**：与 Windows 侧对称 —— 系统 scrcpy
   不可用（缺失 / 版本 < 2.2 / snap 版 / 找不到 server）时，自动安装编译依赖、
   必要时自行编译 SDL3（老发行版没有 `libsdl3-dev`）、下载 scrcpy 源码与匹配的

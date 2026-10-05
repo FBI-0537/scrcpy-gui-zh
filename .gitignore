@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 build-appimage/
+build-linux/
 build/
 dist/
 *.spec
