@@ -214,6 +214,7 @@ scrcpy-gui-zh/
 ├── build-linux.sh          Linux 单个可执行文件构建（x86_64 / arm64 / armhf）
 ├── build-all.sh            批量构建矩阵（多发行版 × 多架构，一次跑完）
 ├── build-in-docker.sh      在 Docker 容器里构建（指定发行版，扩大兼容面）
+├── verify-release.py       发布前验收（架构是否与文件名一致、包里组件是否齐全）
 ├── build-appimage.sh       Linux AppImage 构建（可选）
 ├── build-windows.ps1       Windows exe 构建（需 UTF-8 BOM）
 ├── build-windows.cmd       Windows 构建入口（自动补 BOM，推荐用这个）

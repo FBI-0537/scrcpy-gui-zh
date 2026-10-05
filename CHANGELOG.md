@@ -65,6 +65,15 @@
   最小窗口尺寸从 780×640 放宽到 720×480
 
 ### 构建
+- **新增 `verify-release.py`：发布前验收脚本**（纯 Python，Windows/Linux 都能跑）。
+  发布前拿它扫一遍产物：
+  - 可执行文件类型与架构（ELF/PE；x86-64 / aarch64 / armv7l / i386）
+  - **架构是否与文件名一致** —— 防止把 arm64 产物命名成 x86_64 发出去
+  - 是否真的是 PyInstaller 单文件包（文件尾部 MEI cookie）
+  - 关键组件是否都在（scrcpy / adb / scrcpy-server / install-udev.sh / Tcl-Tk / segno，
+    按平台区分：Windows 不需要 install-udev.sh，依赖是 .dll 不是 .so）
+  - 清点包内依赖库与可执行文件清单
+  用法：`python3 verify-release.py release/1.0.0`
 - **新增 `build-all.sh`：一次构建多发行版 × 多架构的单个可执行文件**
   （默认矩阵：x86_64 / arm64 / armhf；`--arch`、`--distros all`、`--appimage`、
   `--skip-emulated`、`--list`）。按「glibc 档位 × 架构」组织，因为决定兼容性的
