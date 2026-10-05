@@ -151,6 +151,9 @@ pkg_name_for_key() {
         curl)      printf 'curl\n' ;;
         file)      printf 'file\n' ;;
         coreutils) printf 'coreutils\n' ;;
+        # PyInstaller 6 在 Linux 上硬性要求 objdump 来解析 ELF 依赖，
+        # 缺了会直接报 "On Linux, objdump is required"
+        binutils)  printf 'binutils\n' ;;
         tar)       printf 'tar\n' ;;
         findutils) printf 'findutils\n' ;;
         adb)

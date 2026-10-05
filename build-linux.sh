@@ -403,6 +403,7 @@ collect_missing() {
     need_py  tkinter  tkinter   "图形界面"
     need_py  venv     venv      "创建构建虚拟环境"
     need_cmd ldd      ldd       "收集依赖库"
+    need_cmd objdump  binutils  "PyInstaller 解析 ELF 依赖（缺了报 objdump is required）"
     need_cmd curl     curl      "下载依赖"
     need_cmd file     file      "校验产物"
     need_cmd stat     coreutils "读取文件大小"
