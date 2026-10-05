@@ -326,7 +326,17 @@ pkg_refresh() {
         fi
     fi
     case "$DISTRO_FAMILY" in
-        debian) $SUDO apt-get update ;;
+        debian)
+            # 有些代理/镜像会缓存 Packages 索引，于是 apt 拿着**旧的索引**去下载
+            # 已经被替换掉的版本 → 一堆 404（"Failed to fetch ... 404 Not Found"）。
+            # 清掉本地索引 + 强制不走缓存，能把这个坑绕过去。
+            rm -rf /var/lib/apt/lists/* 2>/dev/null || true
+            $SUDO apt-get \
+                -o Acquire::http::No-Cache=true \
+                -o Acquire::https::No-Cache=true \
+                -o Acquire::http::Pipeline-Depth=0 \
+                -o Acquire::Retries=3 \
+                update ;;
         rhel)
             if command -v dnf >/dev/null 2>&1; then
                 $SUDO dnf makecache
