@@ -503,11 +503,17 @@ platform_tools_available_for_arch() {
     esac
 }
 
-# 从 Debian / Ubuntu 归档取本架构的 adb（非 x86_64 上唯一现实的新版 adb 来源）
-# 用法：download_prebuilt_adb <目标目录>；成功时 <目标目录>/adb 可用
+# 从 Debian / Ubuntu 归档取本架构的 adb（非 x86_64 上最现实的新版 adb 来源）
+#
+# 关键：新版 adb 常是给更新的发行版编的（依赖更新的 glibc），在容器里跑不起来。
+# 所以**从新到旧逐个试，用第一个真能运行的**。这对 ARM 尤其重要：
+#   · adb 35.0.2 是给 sid 编的，需要 glibc 2.41+  → debian:12 容器里跑不起来
+#   · adb 34.0.5-12~bpo12+1 是 bookworm backports，glibc 2.36 即可（含 arm64/armhf）
+#   · adb 29.0.6 太旧，没有 adb pair
+# 只取最新版会直接失败，取最旧版又拿不到无线配对能力。
 download_prebuilt_adb() {
     local dest="$1"
-    local arch best base index url tmp deb out
+    local arch base index candidates v url tmp deb out
     arch="$(deb_arch)"
     if [ -z "$arch" ]; then
         warn "  · 未知架构 $(uname -m)，无法从归档取 adb"
@@ -515,74 +521,69 @@ download_prebuilt_adb() {
     fi
     command -v curl >/dev/null 2>&1 || return 1
 
-    best=""
-    url=""
+    candidates=""
     for base in "http://archive.ubuntu.com/ubuntu/pool/universe/a/android-platform-tools" \
                 "http://deb.debian.org/debian/pool/main/a/android-platform-tools"; do
         index="$(curl -fsSL --max-time 25 "$base/" 2>/dev/null || true)"
-        [ -n "$index" ] || continue
-        best="$(printf '%s\n' "$index" \
-            | sed -n "s/.*href=\"adb_\([0-9][^\"]*\)_${arch}\.deb\".*/\1/p" \
-            | sort -V | tail -1)"
-        if [ -n "$best" ]; then
-            url="$base/adb_${best}_${arch}.deb"
+        if [ -n "$index" ]; then
+            candidates="$(printf '%s\n' "$index" \
+                | sed -n "s/.*href=\"adb_\([0-9][^\"]*\)_${arch}\.deb\".*/\1/p" \
+                | sort -Vr)"
+        fi
+        if [ -n "$candidates" ]; then
             break
         fi
     done
-    if [ -z "$best" ]; then
+    if [ -z "$candidates" ]; then
         warn "  · 归档里没有 $arch 架构的 adb 包"
         return 1
     fi
-    info "  · 归档里 $arch 的 adb 版本：$best"
+    info "  · $arch 候选版本（新→旧）：$(printf '%s' "$candidates" | tr '\n' ' ')"
 
     tmp="$(mktemp -d 2>/dev/null || printf '%s' "${dest}.tmp")"
     mkdir -p "$tmp"
-    deb="$tmp/adb.deb"
-    if ! curl -fL --retry 2 --max-time 300 -o "$deb" "$url"; then
-        warn "  · 下载失败：$url"
-        rm -rf "$tmp"
-        return 1
-    fi
-    if command -v dpkg-deb >/dev/null 2>&1; then
-        if ! dpkg-deb -x "$deb" "$tmp/root"; then
-            warn "  · dpkg-deb 解包失败"
-            rm -rf "$tmp"
-            return 1
+    for v in $candidates; do
+        url="$base/adb_${v}_${arch}.deb"
+        deb="$tmp/adb.deb"
+        rm -rf "$tmp/root" "$deb"
+        if ! curl -fL --retry 1 --max-time 180 -o "$deb" "$url" 2>/dev/null; then
+            warn "  · adb $v 下载失败，试下一个"
+            continue
         fi
-    elif command -v ar >/dev/null 2>&1; then
-        if ! ( cd "$tmp" && ar x "$deb" && mkdir -p root && tar -xf data.tar.* -C root ); then
-            warn "  · ar/tar 解包失败"
-            rm -rf "$tmp"
-            return 1
-        fi
-    else
-        warn "  · 既没有 dpkg-deb 也没有 ar"
-        rm -rf "$tmp"
-        return 1
-    fi
-
-    if [ ! -e "$tmp/root/usr/bin/adb" ]; then
-        warn "  · 包里没有 usr/bin/adb"
-        rm -rf "$tmp"
-        return 1
-    fi
-    mkdir -p "$dest"
-    cp -L "$tmp/root/usr/bin/adb" "$dest/adb"
-    chmod 0755 "$dest/adb"
-    rm -rf "$tmp"
-
-    if ! out="$("$dest/adb" --version 2>&1)"; then
-        warn "  · 取到的 adb 在本机跑不起来（架构或 glibc 不匹配）："
-        printf '%s\n' "$out" | head -3 | while read -r line; do
-            if [ -n "$line" ]; then
-                warn "      $line"
+        if command -v dpkg-deb >/dev/null 2>&1; then
+            if ! dpkg-deb -x "$deb" "$tmp/root" >/dev/null 2>&1; then
+                warn "  · adb $v 解包失败"
+                continue
             fi
-        done
+        elif command -v ar >/dev/null 2>&1; then
+            if ! ( cd "$tmp" && ar x "$deb" >/dev/null 2>&1 && mkdir -p root \
+                   && tar -xf data.tar.* -C root >/dev/null 2>&1 ); then
+                warn "  · adb $v 解包失败"
+                continue
+            fi
+        else
+            warn "  · 既没有 dpkg-deb 也没有 ar"
+            rm -rf "$tmp"
+            return 1
+        fi
+        if [ ! -e "$tmp/root/usr/bin/adb" ]; then
+            warn "  · adb $v 包里没有 usr/bin/adb"
+            continue
+        fi
+        mkdir -p "$dest"
+        cp -L "$tmp/root/usr/bin/adb" "$dest/adb"
+        chmod 0755 "$dest/adb"
+        if out="$("$dest/adb" --version 2>&1)"; then
+            info "  · adb $v 可用：$(adb_version_text "$dest/adb")"
+            rm -rf "$tmp"
+            return 0
+        fi
+        warn "  · adb $v 在本机跑不起来（多半 glibc 不够新），试下一个"
         rm -f "$dest/adb"
-        return 1
-    fi
-    info "  · adb 已就位：$dest/adb（$(adb_version_text "$dest/adb")）"
-    return 0
+    done
+    rm -rf "$tmp"
+    warn "  · 所有候选版本都跑不起来"
+    return 1
 }
 
 # download_prebuilt_scrcpy <目标目录>
