@@ -58,16 +58,15 @@ die()  { err "$*"; exit 1; }
 
 # 矩阵条目：平台|镜像|架构分组|说明
 MATRIX_DEFAULT="
-linux/amd64|debian:12|x86_64|Debian 12+ / Ubuntu 22.04+（glibc 2.36）
-linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36，无线配对可用）
-linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36，无线配对可用）
-linux/amd64|debian:11|x86_64|Debian 11+ / Ubuntu 20.04+（glibc 2.31，兼容最老）
-linux/amd64|rockylinux:8|x86_64|RHEL 8+ / Rocky 8+ / CentOS 8+（glibc 2.28）
-linux/arm64|rockylinux:8|arm64|RHEL 8+ arm64（glibc 2.28）
-linux/amd64|archlinux:latest|x86_64|Arch / Manjaro / EndeavourOS（滚动发行版）
-linux/amd64|opensuse/leap:15.5|x86_64|openSUSE Leap 15.5+（glibc 2.31）
-linux/arm64|opensuse/leap:15.5|arm64|openSUSE Leap 15.5+ arm64
+linux/amd64|debian:11|x86_64|一份覆盖所有发行版家族（glibc 2.31）
+linux/arm64|debian:12|arm64|ARM64，含无线配对（glibc 2.36）
+linux/arm/v7|debian:12|armhf|ARM32，含无线配对（glibc 2.36）
 "
+
+# 默认只做「能共用的」3 个产物：产物自带全部依赖，唯一外部依赖是 glibc +
+# 显卡驱动 + X11，而 glibc 只向后兼容 —— 在 glibc 最低的发行版上构建，
+# 就能跑所有更新的系统，与发行版名字无关。
+# 需要覆盖更老的系统（RHEL 8 / glibc 2.28 等）时用 --distros all。
 
 # 各家族的 ARM 支持情况（镜像本身的限制，不是脚本的）：
 #   Debian 系 / openSUSE 系：amd64 + arm64 + arm/v7（openSUSE 无 arm/v7 官方镜像）
@@ -256,7 +255,7 @@ EOF
 fi
 
 if [ "${#TARGETS[@]}" -eq 0 ]; then
-    die "没有匹配的目标（--arch $ARCH_FILTER？可用值：x86_64 / arm64 / armhf）"
+    die "没有匹配的目标（--arch $ARCH_FILTER / --family $FAMILY_FILTER）。默认矩阵只有 3 个共用产物；要按发行版家族构建请加 --distros all"
 fi
 
 # ---------------------------------------------------------------------------
@@ -273,7 +272,7 @@ done
 printf '\n'
 info "产物：单个可执行文件（Python/Tk/scrcpy/adb/依赖库/scrcpy-server 全打包在里面）"
 info "所有产物都会落在：$SCRIPT_DIR/dist/"
-info "x86_64 每个约 3-6 分钟；arm64 / armhf 走 QEMU 模拟，每个 15-60 分钟"
+    info "默认 3 个目标：x86_64 约 3-6 分钟，两个 ARM 走 QEMU 各 15-60 分钟"
 
 # 没有 --yes/--no-install 时自动加上 --yes
 HAS_YES=0

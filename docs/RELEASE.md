@@ -67,12 +67,15 @@ python3 verify-release.py dist/
 ## 三、资产命名规范
 
 ```
-scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64         ← debian:11 构建，兼容面最广
-scrcpy-gui-zh-1.0.0-linux-glibc2.35-x86_64         ← ubuntu:22.04 构建
-scrcpy-gui-zh-1.0.0-linux-glibc2.39-x86_64         ← ubuntu:24.04 构建
-scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64        ← arm64（树莓派 4/5 64 位系统）
-scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l         ← 32 位 ARM
-scrcpy-gui-zh-1.0.0-windows-x86_64.exe             ← Windows
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64        ← 一份覆盖所有发行版家族
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64       ← ARM64（树莓派 4/5 64 位），含无线配对
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l        ← ARM32，含无线配对
+scrcpy-gui-zh-1.0.0-windows-x86_64.exe            ← Windows
+
+（上面的 x86_64 那份能跑 Debian 11+ / Ubuntu 20.04+ / RHEL 9+ / Fedora 37+ /
+  Arch / Manjaro / openSUSE Leap 15.5+ —— glibc 只向后兼容，与发行版名字无关。
+  只有目标系统比 glibc 2.31 还老时（例如 RHEL 8 / glibc 2.28），才需要额外用
+  `-AllDistros` 里的 rockylinux:8 构建一份。）
 ```
 
 **为什么不叫 `debian` 版本**：glibc 只能向后兼容，Ubuntu 22.04（2.35）构建的产物

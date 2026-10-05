@@ -242,28 +242,30 @@ docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
 ### 2.6 一次构建多架构 / 多发行版：`build-docker.sh`
 
 ```bash
-./build-docker.sh                     # 默认矩阵：x86_64 / arm64 / armhf
+./build-docker.sh                     # 默认只做 3 个"能共用"的产物
 ./build-docker.sh --list              # 只看计划，不构建
 ./build-docker.sh --arch arm64        # 只做一个架构（x86_64 | arm64 | armhf）
-./build-docker.sh --distros all       # 每个架构覆盖全部 glibc 档位（更慢更全）
+./build-docker.sh --family debian     # 按家族过滤（默认矩阵里都是 debian）
+./build-docker.sh --distros all       # 展开成按发行版家族逐个构建（9 个，很慢）
 ./build-docker.sh --skip-emulated     # 跳过需要 QEMU 模拟的架构
 ```
 
-**默认矩阵**（产物都是单个可执行文件）：
+**默认矩阵：3 个产物覆盖所有发行版家族与架构**
 
-| 镜像 | 平台 | glibc | 适用 |
+| 基础镜像 | 平台 | glibc 下限 | 覆盖范围 |
 |---|---|---|---|
-| debian:11 | linux/amd64 | 2.31 | 兼容面最广（推荐发布） |
-| ubuntu:22.04 | linux/amd64 | 2.35 | 中等 |
-| ubuntu:24.04 | linux/amd64 | 2.39 | 较新 |
-| **debian:12** | linux/arm64 | 2.36 | 树莓派 4/5 64 位系统，**无线配对可用** |
-| debian:11 | linux/arm64 | 2.31 | 兼容最老的 ARM，无无线配对 |
-| **debian:12** | linux/arm/v7 | 2.36 | 32 位 ARM，**无线配对可用** |
+| **debian:11** | linux/amd64 | 2.31 | **一个文件覆盖所有家族**：Debian 11+、Ubuntu 20.04+、RHEL 9+、Fedora 37+、Arch、Manjaro、openSUSE Leap 15.5+ |
+| **debian:12** | linux/arm64 | 2.36 | ARM64（树莓派 4/5 64 位系统），**含无线配对** |
+| **debian:12** | linux/arm/v7 | 2.36 | 32 位 ARM，**含无线配对** |
 
-**为什么不是"每个发行版打一份"**：决定产物能不能用的不是发行版名字，而是
-**glibc 版本**。Debian 11 构建的产物能跑在 Debian 11/12/13、Ubuntu 20.04+、RHEL 9 上，
-已经覆盖绝大多数在用的 Linux；同架构再按发行版逐个构建，只是名字不同，
-兼容范围反而可能更窄。
+**为什么一个 x86_64 就够了**：产物是把 Python/Tk/scrcpy/adb/依赖库**全部打包进去的单文件**，
+唯一的外部依赖只有 **glibc + 显卡驱动 + X11**；而 glibc 只向后兼容 —— 在 glibc 最低的
+发行版上构建，产物就能跑在所有更新的系统上，**与发行版名字无关**。
+在 Fedora 上构建的产物 glibc 下限更高，能跑的反而更少。
+
+**什么时候才需要 `--distros all`**：目标系统比默认产物还老时。典型是
+**RHEL 8 / Rocky 8 / CentOS 8（glibc 2.28）** —— 那时用 `rockylinux:8` 构建一份。
+其余家族（Fedora / Arch / openSUSE）都能直接用 Debian 那份，不必单独构建。
 
 **⚠️ ARM 架构的两个已知限制**（脚本会自动处理，但要心里有数）：
 
@@ -277,10 +279,9 @@ docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
    | debian:13（glibc 2.41） | 34.0.5 | ✅ 可用 |
    | debian:11（glibc 2.31） | 拿不到（候选都要更高 glibc） | ❌ 只有 USB / USB 转无线 |
 
-   所以**默认矩阵里 ARM 用 debian:12**。原有的说明段落如下（保留供参考）：
-   脚本会改成从 Debian/Ubuntu 归档取本架构的 `adb`，但这些包通常低于 platform-tools 30，
-   所以 `adb pair` / `adb mdns`（方式二 / 方式三）用不了。**USB 直连与方式一（USB 转无线）正常。**
-   因此 `build-docker.sh` 对非 x86_64 目标会自动加 `--allow-old-adb`。
+   所以 ARM 用 debian:12。若目标 ARM 机器更老（Debian 11 / 树莓派 OS Bullseye），
+   可以 `--distro debian:11 --arch arm64` 单独出一份 —— 代价是没有无线配对。
+   脚本对非 x86_64 目标会自动加 `--allow-old-adb`。
 2. **32 位 ARM（armhf）风险较高**：PyInstaller 可能没有该架构的预编译 bootloader，
    需要容器里有 `gcc` 与 `zlib1g-dev` 现场编译；QEMU 模拟下也很慢。
 

@@ -69,38 +69,53 @@ if (-not $Proj) { $Proj = (Get-Location).Path }
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
 # ---------------------------------------------------------------------------
-# 矩阵：按「发行版家族 × 架构」组织
+# ---------------------------------------------------------------------------
+# 默认矩阵：**能共用就一份** —— 3 个产物覆盖所有发行版家族与架构
 #
-# 每个家族都选该家族**最老仍受支持的版本**作为基础镜像 —— 这样产物的
-# glibc 下限最低，覆盖该家族最广的老机器。注意 glibc 只能向后兼容：
-# 在某一族上构建的产物，在任何 glibc 不低于它的系统上都能跑（不分家族）。
+# 为什么一个 x86_64 就够：
+#   产物是把 Python/Tk/scrcpy/adb/依赖库全部打包进去的单文件，唯一的外部依赖
+#   只有 glibc + 显卡驱动 + X11。而 glibc 只向后兼容 —— 在 glibc 最低的那个
+#   发行版上构建，产物就能跑在所有更新的系统上，**与发行版名字无关**。
+#     debian:11（glibc 2.31）→ 覆盖 Debian 11+ / Ubuntu 20.04+ / RHEL 9+ /
+#                              Fedora 37+ / Arch / Manjaro / openSUSE Leap 15.5+
+#   x86_64 的无线配对走 Google 官方 platform-tools，与基础镜像无关，照样可用。
+#   ARM 要无线配对就得能拿到 adb ≥ 30，所以 ARM 用 debian:12（glibc 2.36）。
 #
-# 各家族的 ARM 支持情况（这是镜像本身的限制，不是我们脚本的）：
-#   · Debian 系：amd64 / arm64 / arm/v7 三种都有
-#   · 红帽系：有 amd64 / arm64，**没有 32 位 ARM**（RHEL 早就砍掉了）
-#   · Arch 系：官方镜像**只有 x86_64**（Arch Linux ARM 是另一个项目，无官方镜像）
-#   · openSUSE 系：有 amd64 / arm64，无 32 位 ARM 官方镜像
+# 需要覆盖更老的系统（例如 RHEL 8 / glibc 2.28）时，加 -AllDistros 选对应镜像。
 # ---------------------------------------------------------------------------
 $Matrix = @(
-    # Debian 系（3 架构）—— debian:12 起 ARM 才拿得到 adb ≥ 30（无线配对）
+    @{ Family = 'debian'; Image = 'debian:11'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = '一份覆盖所有发行版家族（glibc 2.31）' }
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'ARM64，含无线配对（glibc 2.36）' }
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'ARM32，含无线配对（glibc 2.36）' }
+)
+
+# -AllDistros：按发行版家族逐个构建（只在需要覆盖极老系统时才用）
+#
+# 每个家族选该家族**最老仍受支持的版本**，这样 glibc 下限最低、覆盖面最广。
+# 各家族的 ARM 支持情况（镜像本身的限制，不是脚本的）：
+#   · Debian 系：amd64 / arm64 / arm/v7 三种都有
+#   · 红帽系：有 amd64 / arm64，**没有 32 位 ARM**（RHEL 早就砍掉了）
+#   · Arch 系：官方镜像**只有 x86_64**（Arch Linux ARM 是另一个项目）
+#   · openSUSE 系：有 amd64 / arm64，无 32 位 ARM 官方镜像
+$MatrixExtra = @(
     @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 12+ / Ubuntu 22.04+（glibc 2.36）' }
-    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（glibc 2.36，无线配对可用）' }
-    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（glibc 2.36，无线配对可用）' }
-    # Debian 系补充：极老系统兼容（glibc 2.31）
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（无线配对可用）' }
+    @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（无线配对可用）' }
     @{ Family = 'debian'; Image = 'debian:11'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 11+ / Ubuntu 20.04+（glibc 2.31，兼容最老）' }
-    # 红帽系（2 架构；无 32 位 ARM）
-    @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'RHEL 8+ / Rocky 8+ / CentOS 8+（glibc 2.28，红帽里兼容最广）' }
+    @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'RHEL 8+ / Rocky 8+ / CentOS 8+（glibc 2.28，红帽里最广）' }
     @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/arm64'; Arch = 'arm64';  Note = 'RHEL 8+ arm64（glibc 2.28）' }
-    # Arch 系（官方镜像只有 x86_64）
-    @{ Family = 'arch';   Image = 'archlinux:latest'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'Arch / Manjaro / EndeavourOS（滚动发行版，无旧版本概念）' }
-    # openSUSE 系（2 架构）
+    @{ Family = 'arch';   Image = 'archlinux:latest'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'Arch / Manjaro / EndeavourOS（滚动发行版）' }
     @{ Family = 'suse';   Image = 'opensuse/leap:15.5'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'openSUSE Leap 15.5+（glibc 2.31）' }
     @{ Family = 'suse';   Image = 'opensuse/leap:15.5'; Plat = 'linux/arm64'; Arch = 'arm64';  Note = 'openSUSE Leap 15.5+ arm64' }
 )
-
 # 非 Debian 系的镜像里没有现成的 Debian 包可用（glibc 不匹配），
 # scrcpy 基本只能源码编译，所以这些家族自动带上 --auto-scrcpy。
 $FamiliesNeedCompile = @('rhel', 'arch', 'suse')
+
+if ($AllDistros) {
+    $Matrix = $MatrixExtra
+    Say "（已启用 -AllDistros：按发行版家族逐个构建，目标数会多很多）" Yellow
+}
 
 # ---------------------------------------------------------------------------
 # 组装目标
@@ -121,7 +136,7 @@ else {
 }
 
 if ($Targets.Count -eq 0) {
-    throw "没有匹配的目标（-Family $Family / -Arch $Arch）。可用家族：debian / rhel / arch / suse；可用架构：x86_64 / arm64 / armhf"
+    throw "没有匹配的目标（-Family $Family / -Arch $Arch）。默认矩阵只有 3 个共用产物；要按发行版家族构建请加 -AllDistros"
 }
 
 Say ""
@@ -134,7 +149,7 @@ foreach ($t in $Targets) {
 Say ""
 Say "产物目录：$Proj\dist" Gray
 Say "产物形态：单个可执行文件（依赖与软件全部打包在里面）" Gray
-Say "时间预期：x86_64 每个 3-6 分钟；arm64 / armhf 每个 15-60 分钟" Yellow
+Say "时间预期：默认 3 个目标 —— x86_64 约 3-6 分钟，两个 ARM 各 15-60 分钟" Yellow
 Say "重要：glibc 只能向后兼容 —— 在某个家族上构建的产物，在任何 glibc 不低于它的" Yellow
 Say "      系统上都能跑（不分家族）。所以 Debian 11 那份其实也能跑 Fedora/Arch。" Yellow
 
