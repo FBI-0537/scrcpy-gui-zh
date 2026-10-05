@@ -434,6 +434,73 @@ host_fuse_pkg() {
 }
 
 # ---------------------------------------------------------------------------
+# 版本比较与最低版本要求
+# ---------------------------------------------------------------------------
+# 低于这些版本会出各种奇怪问题，所以构建前必须先装到够新。
+MIN_PYTHON="3.8"          # PyInstaller 支持下限
+MIN_PYINSTALLER="6.0"     # 6 以下对新 Python / Tcl-Tk 支持差
+MIN_SCRCPY="2.2"          # 低于 2.2 投不了 Android 14+
+MIN_PLATFORM_TOOLS="30"   # adb pair / adb mdns 从这里开始才有
+MIN_MESON="0.60"          # 编译 scrcpy 需要
+MIN_NINJA="1.8"
+MIN_CMAKE="3.16"          # 编译 SDL3 需要
+MIN_GCC="7"
+
+# ver_ge <实际> <要求>：实际 >= 要求 返回 0，否则 1
+ver_ge() {
+    local a="$1" b="$2" a1 a2 b1 b2
+    a="${a%%[!0-9.]*}"      # 丢掉后缀：3.10.12+ -> 3.10.12
+    b="${b%%[!0-9.]*}"
+    case "$a" in
+        *.*) a1="${a%%.*}"; a2="${a#*.}"; a2="${a2%%.*}" ;;
+        *)   a1="$a"; a2=0 ;;
+    esac
+    case "$b" in
+        *.*) b1="${b%%.*}"; b2="${b#*.}"; b2="${b2%%.*}" ;;
+        *)   b1="$b"; b2=0 ;;
+    esac
+    case "$a1" in ''|*[!0-9]*) a1=0 ;; esac
+    case "$a2" in ''|*[!0-9]*) a2=0 ;; esac
+    case "$b1" in ''|*[!0-9]*) b1=0 ;; esac
+    case "$b2" in ''|*[!0-9]*) b2=0 ;; esac
+    if [ "$a1" -gt "$b1" ]; then
+        return 0
+    fi
+    if [ "$a1" -lt "$b1" ]; then
+        return 1
+    fi
+    [ "$a2" -ge "$b2" ]
+}
+
+# 取某个工具的版本号（取不到输出空串）
+version_of() {
+    case "$1" in
+        python3)   python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null ;;
+        meson)     meson --version 2>/dev/null | head -1 ;;
+        ninja)     ninja --version 2>/dev/null | head -1 ;;
+        cmake)     cmake --version 2>/dev/null | head -1 | sed 's/[^0-9.]//g' ;;
+        gcc)       gcc -dumpversion 2>/dev/null | head -1 ;;
+        pkgconfig) pkg-config --version 2>/dev/null | head -1 ;;
+        *)         printf '' ;;
+    esac
+}
+
+# 打印检查结果：[OK] / [需处理] / [缺失]
+chk_ok()   { printf '  \033[32m[OK]\033[0m    %-12s %s\n' "$1" "$2"; }
+chk_fix()  { printf '  \033[33m[需处理]\033[0m %-12s %s\n' "$1" "$2"; }
+chk_bad()  { printf '  \033[31m[缺失]\033[0m  %-12s %s\n' "$1" "$2"; }
+
+# 检查「命令 + 最低版本」，返回 0 表示通过
+check_tool_version() {
+    local key="$1" label="$2" min="$3" have
+    have="$(version_of "$key")"
+    if [ -z "$have" ]; then
+        return 1
+    fi
+    ver_ge "$have" "$min"
+}
+
+# ---------------------------------------------------------------------------
 # adb 版本 / mdns 支持
 # ---------------------------------------------------------------------------
 # `adb mdns` 是 platform-tools 30（2020）才加的子命令。老发行版源里的 adb

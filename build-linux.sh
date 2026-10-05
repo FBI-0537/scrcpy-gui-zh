@@ -261,7 +261,14 @@ build_scrcpy_from_source() {
 # ---------------------------------------------------------------------------
 # 1. 检查构建环境
 # ---------------------------------------------------------------------------
-step "1/6 检查构建环境"
+step "1/6 检查环境与依赖（缺失或版本不对的，先装好再继续）"
+
+# --clean 必须在这里做：后面要建 venv，放到后面清理会把 venv 一起删掉
+if [ "$CLEAN" -eq 1 ]; then
+    info "清理旧的构建目录…"
+    rm -rf "$BUILD_ROOT" "$DIST_DIR"
+fi
+mkdir -p "$BUILD_ROOT" "$DIST_DIR"
 
 case "$(uname -m)" in
     x86_64|amd64)   ARCH_TAG="x86_64";  MULTIARCH="x86_64-linux-gnu" ;;
@@ -385,7 +392,88 @@ fi
 
 [ -f "$GUI_PY" ]   || die "找不到界面脚本：$GUI_PY"
 [ -f "$UDEV_SRC" ] || die "找不到 udev 安装脚本：$UDEV_SRC"
+
 info "python3：$(python3 --version 2>&1)"
+
+# ---------------------------------------------------------------------------
+# 版本检查：不对的先装到够新，再开始干正事
+# ---------------------------------------------------------------------------
+PY_VER="$(version_of python3)"
+if [ -z "$PY_VER" ] || ! ver_ge "$PY_VER" "$MIN_PYTHON"; then
+    warn "python3 版本 ${PY_VER:-未知} 低于要求 $MIN_PYTHON"
+    MISSING_PKGS=("python3")
+    MISSING_DESC=("python3 版本过低（${PY_VER:-未知} < $MIN_PYTHON）")
+    ensure_deps
+fi
+chk_ok "python3" "$(version_of python3)（要求 ≥ $MIN_PYTHON）"
+
+# 只有真要源码编译 scrcpy 时，才强制要求编译工具链
+if [ "$AUTO_SCRCPY" -eq 1 ]; then
+    info "检查编译工具链版本（--auto-scrcpy 已启用）…"
+    MISSING_PKGS=()
+    MISSING_DESC=()
+    for pair in "meson:$MIN_MESON" "ninja:$MIN_NINJA" "pkgconfig:0.29" "gcc:$MIN_GCC"; do
+        tkey="${pair%%:*}"
+        tmin="${pair##*:}"
+        thave="$(version_of "$tkey")"
+        if [ -z "$thave" ]; then
+            MISSING_PKGS+=("$tkey")
+            MISSING_DESC+=("$tkey 未安装（要求 ≥ $tmin）")
+        elif ! ver_ge "$thave" "$tmin"; then
+            MISSING_PKGS+=("$tkey")
+            MISSING_DESC+=("$tkey 版本过低（$thave < $tmin）")
+        else
+            chk_ok "$tkey" "$thave（要求 ≥ $tmin）"
+        fi
+    done
+    if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
+        ensure_deps
+    fi
+else
+    info "（未启用 --auto-scrcpy，跳过编译工具链版本检查）"
+fi
+
+# ---------------------------------------------------------------------------
+# 构建虚拟环境 + PyInstaller（版本不够就地升级）
+# ---------------------------------------------------------------------------
+if [ ! -x "$BUILD_ROOT/venv/bin/python" ]; then
+    info "创建构建用虚拟环境：$BUILD_ROOT/venv"
+    rm -rf "$BUILD_ROOT/venv"
+    if ! python3 -m venv "$BUILD_ROOT/venv"; then
+        warn "创建虚拟环境失败，尝试补装 venv 相关包…"
+        MISSING_PKGS=("venv")
+        MISSING_DESC=("python3 的 venv 模块不可用")
+        ensure_deps
+        python3 -m venv "$BUILD_ROOT/venv" \
+            || die "创建虚拟环境失败：$BUILD_ROOT/venv"
+    fi
+fi
+VPY="$BUILD_ROOT/venv/bin/python"
+"$VPY" -m pip install --quiet --upgrade pip wheel >/dev/null 2>&1 \
+    || warn "升级 pip / wheel 失败，继续（多半不影响）"
+
+PYI_VER="$("$VPY" -m PyInstaller --version 2>/dev/null || true)"
+if [ -z "$PYI_VER" ] || ! ver_ge "$PYI_VER" "$MIN_PYINSTALLER"; then
+    info "安装/升级 PyInstaller（当前 ${PYI_VER:-未安装}，要求 ≥ $MIN_PYINSTALLER）…"
+    "$VPY" -m pip install --quiet --upgrade pyinstaller \
+        || die "PyInstaller 安装失败，请检查网络与系统代理设置"
+    PYI_VER="$("$VPY" -m PyInstaller --version 2>/dev/null || true)"
+fi
+if [ -z "$PYI_VER" ] || ! ver_ge "$PYI_VER" "$MIN_PYINSTALLER"; then
+    die "PyInstaller 版本仍不满足要求（${PYI_VER:-未知} < $MIN_PYINSTALLER）"
+fi
+chk_ok "PyInstaller" "$PYI_VER（要求 ≥ $MIN_PYINSTALLER）"
+
+# 二维码渲染库：装不上也能跑，程序会退化成剪贴板提示
+if ! "$VPY" -c 'import segno' >/dev/null 2>&1; then
+    info "安装二维码库 segno…"
+    "$VPY" -m pip install --quiet segno || warn "segno 安装失败，二维码将用备用方案"
+fi
+if "$VPY" -c 'import segno' >/dev/null 2>&1; then
+    chk_ok "segno" "$("$VPY" -c 'import segno;print(getattr(segno,"__version__","?"))' 2>/dev/null)"
+else
+    chk_fix "segno" "未安装，二维码将退化为纯文本提示"
+fi
 info "脚本目录：$SCRIPT_DIR"
 info "中间产物：$BUILD_ROOT"
 info "最终产物：$DIST_DIR"
@@ -579,11 +667,7 @@ fi
 # ---------------------------------------------------------------------------
 step "3/6 收集 scrcpy / adb 的依赖库"
 
-if [ "$CLEAN" -eq 1 ]; then
-    info "清理旧的构建目录…"
-    rm -rf "$BUILD_ROOT" "$DIST_DIR"
-fi
-mkdir -p "$BUILD_ROOT" "$LIBS_DIR" "$DIST_DIR"
+mkdir -p "$LIBS_DIR" "$DIST_DIR"
 
 copy_libs() {
     local bin="$1" lib base
@@ -616,14 +700,8 @@ fi
 # ---------------------------------------------------------------------------
 step "4/6 打包成单文件可执行程序（约 1-3 分钟）"
 
-if [ ! -x "$BUILD_ROOT/venv/bin/python" ]; then
-    info "创建构建用虚拟环境…"
-    python3 -m venv "$BUILD_ROOT/venv"
-fi
-VPY="$BUILD_ROOT/venv/bin/python"
-"$VPY" -m pip install --quiet --upgrade pip wheel
-info "安装 PyInstaller 与二维码库 segno…"
-"$VPY" -m pip install --quiet pyinstaller segno
+info "使用虚拟环境：$VPY"
+info "使用 PyInstaller：$("$VPY" -m PyInstaller --version 2>/dev/null)"
 
 OUT="$DIST_DIR/$APP_ID-$APP_VER-$ARCH_TAG"
 rm -f "$OUT"

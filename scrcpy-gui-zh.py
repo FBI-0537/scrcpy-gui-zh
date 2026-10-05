@@ -844,6 +844,98 @@ def make_qr_matrix(data):
 # 主界面
 # ------------------------------------------------------------------
 
+class ScrollableFrame(ttk.Frame):
+    """带滚轮的容器：内容比窗口高时自动出现滚动条。
+
+    解决"屏幕高度不够，页面底部内容看不见"的问题。
+    滚轮只在鼠标位于本容器上时生效，多个页面之间不抢事件。
+    """
+
+    def __init__(self, parent, padding=12, **kwargs):
+        super().__init__(parent, **kwargs)
+        try:
+            bg = ttk.Style().lookup("TFrame", "background") or "#f0f0f0"
+        except tk.TclError:
+            bg = "#f0f0f0"
+
+        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0,
+                                background=bg)
+        self.vbar = ttk.Scrollbar(self, orient="vertical",
+                                  command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self._on_scroll_set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.vbar.pack(side="right", fill="y")
+
+        self.inner = ttk.Frame(self.canvas, padding=padding)
+        self._window = self.canvas.create_window((0, 0), window=self.inner,
+                                                 anchor="nw")
+        self.inner.bind("<Configure>", self._on_inner_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # 用全局绑定 + 指针位置判断，避免 Enter/Leave 在子控件上误触发
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.canvas.bind_all(seq, self._on_wheel, add="+")
+
+    # ---- 内部 ----
+
+    def _on_scroll_set(self, first, last):
+        """内容没超高时把滚动条藏起来，省地方。"""
+        try:
+            if float(first) <= 0.0 and float(last) >= 1.0:
+                self.vbar.pack_forget()
+            elif not self.vbar.winfo_ismapped():
+                self.vbar.pack(side="right", fill="y")
+        except (tk.TclError, ValueError):
+            pass
+        self.vbar.set(first, last)
+
+    def _on_inner_configure(self, _event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event):
+        # 内容宽度跟随窗口宽度
+        self.canvas.itemconfigure(self._window, width=event.width)
+
+    def _content_taller(self):
+        box = self.canvas.bbox("all")
+        if not box:
+            return False
+        return (box[3] - box[1]) > self.canvas.winfo_height()
+
+    def _pointer_inside(self, event):
+        try:
+            widget = self.canvas.winfo_containing(event.x_root, event.y_root)
+        except (tk.TclError, KeyError):
+            return False
+        while widget is not None:
+            if widget is self.canvas or widget is self.inner:
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
+    def _on_wheel(self, event):
+        try:
+            if not self.canvas.winfo_exists():
+                return None
+        except tk.TclError:
+            return None
+        if not self._pointer_inside(event) or not self._content_taller():
+            return None
+        num = getattr(event, "num", None)
+        if num == 4:
+            step = -3
+        elif num == 5:
+            step = 3
+        else:
+            step = -3 if getattr(event, "delta", 0) > 0 else 3
+        self.canvas.yview_scroll(step, "units")
+        return "break"
+
+    def scroll_to_top(self):
+        self.canvas.yview_moveto(0.0)
+
+
 class ScrcpyGui:
     def __init__(self, root):
         self.root = root
@@ -855,7 +947,7 @@ class ScrcpyGui:
         self._fuse_warned = False      # 是否已弹过「缺 FUSE」提示
 
         root.title("%s — %s" % (APP_TITLE, APP_SUB))
-        root.minsize(780, 640)
+        root.minsize(720, 480)
 
         self._setup_fonts()
         self._setup_style()
@@ -914,15 +1006,15 @@ class ScrcpyGui:
         self.notebook = ttk.Notebook(outer)
         self.notebook.pack(fill="both", expand=True)
 
-        self.tab_mirror = ttk.Frame(self.notebook, padding=12)
-        self.tab_wifi = ttk.Frame(self.notebook, padding=12)
+        self.tab_mirror = ScrollableFrame(self.notebook, padding=12)
+        self.tab_wifi = ScrollableFrame(self.notebook, padding=12)
         self.tab_help = ttk.Frame(self.notebook, padding=12)
         self.notebook.add(self.tab_mirror, text="  投屏  ")
         self.notebook.add(self.tab_wifi, text="  无线连接  ")
         self.notebook.add(self.tab_help, text="  帮助  ")
 
-        self._build_mirror(self.tab_mirror)
-        self._build_wifi(self.tab_wifi)
+        self._build_mirror(self.tab_mirror.inner)
+        self._build_wifi(self.tab_wifi.inner)
         self._build_help(self.tab_help)
 
         self.status = ttk.Label(outer, text="就绪", style="Hint.TLabel", anchor="w")
@@ -1114,6 +1206,20 @@ class ScrcpyGui:
         sbar = ttk.Scrollbar(wrap, command=text.yview)
         sbar.pack(side="right", fill="y")
         text.configure(yscrollcommand=sbar.set)
+
+        # 帮助页自己就是一块文本，给它绑滚轮（Tk 的 Text 默认不响应滚轮）
+        def _help_wheel(event):
+            num = getattr(event, "num", None)
+            if num == 4:
+                text.yview_scroll(-3, "units")
+            elif num == 5:
+                text.yview_scroll(3, "units")
+            else:
+                text.yview_scroll(-3 if getattr(event, "delta", 0) > 0 else 3, "units")
+            return "break"
+
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            text.bind(seq, _help_wheel)
 
         if IS_WIN:
             install_lines = [

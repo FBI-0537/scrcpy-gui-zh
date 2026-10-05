@@ -41,7 +41,20 @@
 - `install-udev.sh`：内置 21 个厂商 ID，支持追加；自动识别 `SUDO_USER` /
   `PKEXEC_UID` 判断真实用户；处理 `plugdev` 组不存在的情况；重载 udev 并做现状检查
 
+### 界面
+- **加入鼠标滚轮**：窗口高度不够时页面不再被截断。「投屏」「无线连接」两个页面
+  改为可滚动容器（内容超出才显示滚动条），「帮助」页的文本框也绑定了滚轮；
+  支持 Windows/macOS 的 `<MouseWheel>` 与 Linux 的 `<Button-4/5>`；
+  最小窗口尺寸从 780×640 放宽到 720×480
+
 ### 构建
+- **构建脚本先做完整的依赖与版本检查，不对的先装好再继续**：
+  第 1 步新增 python3（≥ 3.8）、编译工具链（meson ≥ 0.60、ninja ≥ 1.8、
+  pkg-config、gcc ≥ 7，仅 --auto-scrcpy 时检查）的版本校验；
+  虚拟环境与 PyInstaller（≥ 6.0）也移到第 1 步创建并就地升级，segno 一并检查。
+  `--clean` 的清理动作提前到创建 venv 之前（否则会把自己建的 venv 删掉）。
+  新增 `ver_ge` / `version_of` / `chk_ok|chk_fix|chk_bad` 等工具函数，
+  所有检查结果都打印成 `[OK] / [需处理] / [缺失]` 列表
 - **保证产物里的无线配对可用**：构建脚本发现 adb 过旧时会自动下载官方
   platform-tools 到 `vendor/platform-tools/` 并**校验下载结果确实支持 mdns**；
   下载失败或校验不过则**中止构建**（而不是像以前那样只警告后照常出包）。
