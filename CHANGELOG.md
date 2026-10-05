@@ -48,6 +48,12 @@
   最小窗口尺寸从 780×640 放宽到 720×480
 
 ### 构建
+- **scrcpy 版本不对时优先「下载」而不是「编译」**：新增
+  `download_prebuilt_scrcpy` / `install_scrcpy_tree`，从 Debian / Ubuntu 归档
+  取最新的 `scrcpy_<ver>_<arch>.deb` 解包（`dpkg-deb -x`，无则 `ar x` + `tar`），
+  并**实际运行 `scrcpy --version` 验证**——跑不起来（glibc / 依赖库不匹配）
+  就自动删除并转而源码编译。顺序：系统 → `vendor/scrcpy` → 下载 → 编译
+  （编译仍需 `--auto-scrcpy`）；新增 `--no-auto-download` 可关闭下载
 - **构建脚本先做完整的依赖与版本检查，不对的先装好再继续**：
   第 1 步新增 python3（≥ 3.8）、编译工具链（meson ≥ 0.60、ninja ≥ 1.8、
   pkg-config、gcc ≥ 7，仅 --auto-scrcpy 时检查）的版本校验；

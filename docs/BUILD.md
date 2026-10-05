@@ -138,6 +138,39 @@
 ```
 若过旧则打印警告，并说明此时仍可用 USB 直连与方式一（USB 转无线）。
 
+### 2.4 scrcpy 从哪来：优先「下载」，其次「编译」
+
+Linux 上 scrcpy 官方**不提供预编译二进制**，所以获取顺序是：
+
+| 顺序 | 来源 | 说明 |
+|---|---|---|
+| 1 | 系统已装的 scrcpy | 版本 ≥ 2.2 且非 snap 版，直接用 |
+| 2 | 项目 `vendor/scrcpy/` | 上次下载或编译好的，直接复用 |
+| 3 | **下载现成的包** | 从 Debian / Ubuntu 归档取最新的 `scrcpy_<ver>_<arch>.deb`，解包到 `vendor/scrcpy/` |
+| 4 | 源码编译 | 仅当加了 `--auto-scrcpy`（要编 SDL3，通常十几分钟） |
+| 5 | 都不行 | 中止，并给出三条解法 |
+
+```bash
+./build-linux.sh                     # 允许自动下载（默认行为）
+./build-linux.sh --no-auto-download  # 不联网下载，只用系统里已有的
+./build-linux.sh --auto-scrcpy       # 下载也不行时，允许源码编译兜底
+```
+
+下载来源（两个都会试）：
+
+```
+http://archive.ubuntu.com/ubuntu/pool/universe/s/scrcpy/
+http://deb.debian.org/debian/pool/main/s/scrcpy/
+```
+
+**解包后会实际运行一次验证**：脚本执行 `scrcpy --version`，跑不起来就删掉并
+打印缺哪个库。这一步很关键 —— 这些包是给别的发行版编的，可能依赖更新的 glibc
+（如 2.39）或更新的 `libavcodec.so.61`；本机跑不起来就说明打进包里也没用，
+脚本会自动转而编译。
+
+解包用 `dpkg-deb -x`（Debian 系），没有则用 `ar x` + `tar`（其它发行版），
+两者都没有就直接走编译。
+
 ## 3. 方式一：直接运行源码
 
 ```bash

@@ -51,9 +51,10 @@ snap 版又因为链接 snap 私有 glibc 而无法打包。所以：
 
 | 方式 | 你要做什么 | scrcpy 的位置 |
 |---|---|---|
-| **① 自动编译（推荐）** | 加 `--auto-scrcpy` | 脚本自动装依赖 → 缺 SDL3 就编 SDL3 → 编 scrcpy → 装到 **`项目/vendor/scrcpy/`** |
+| **① 自动获取（推荐）** | 什么都不做 | 系统里版本够新就直接用；否则**自动从 Debian/Ubuntu 归档下载现成的包**（快，不编译）；再不行才 `--auto-scrcpy` 源码编译 |
 | ② 系统里已有可用的 | 什么都不做 | 版本 ≥ 2.2 且非 snap 时直接使用 |
 | ③ 手动编译 | 见 [docs/BUILD.md](docs/BUILD.md) 第 7 节 | 用 `SCRCPY_BIN=` 指定路径 |
+| ④ 禁止联网下载 | 加 `--no-auto-download` | 只用系统里已有的 |
 
 **支持的发行版**（构建脚本自动识别家族，选用对应的包管理器与包名）：
 
@@ -70,13 +71,16 @@ snap 版又因为链接 snap 私有 glibc 而无法打包。所以：
 `scrcpy` / `adb` 在 RHEL 系可能需要额外仓库（如 RPM Fusion）。
 
 ```bash
-# 全自动：连 scrcpy 都帮你编译好（首次约 10–20 分钟，主要在编 SDL3）
+# 推荐：缺依赖自动装；scrcpy 版本不对就从归档下载现成的（不编译，很快）
+./build-linux.sh --yes --clean
+
+# 下载也不行时，允许源码编译兜底（首次约 10–20 分钟，主要在编 SDL3）
 ./build-linux.sh --auto-scrcpy --yes --clean
 
-# 系统里已有合适版本时，直接构建
-./build-linux.sh --clean
+# 不联网下载，只用系统里已有的
+./build-linux.sh --no-auto-download --clean
 
-# 缺少系统依赖时会列出清单并询问是否自动安装（apt）
+# 缺少系统依赖时会列出清单并询问是否自动安装（apt/dnf/pacman/zypper/apk）
 ./build-linux.sh --yes         # 不询问，缺什么直接装
 ./build-linux.sh --no-install  # 只检查，缺了就报错退出
 

@@ -273,6 +273,7 @@ ASSUME_YES=0       # 是否跳过安装询问
 MAKE_README=1      # 是否在 dist 里生成 FUSE说明.txt
 AUTO_SCRCPY=0      # 系统 scrcpy 不可用时是否自动源码编译
 AUTO_ADB=1         # 系统 adb 过旧（不支持 mdns）时是否自动取官方 platform-tools
+AUTO_DOWNLOAD=1    # 系统 scrcpy 不可用时是否优先下载现成的包（不编译）
 ALLOW_OLD_ADB=0    # 是否允许用旧 adb 继续构建（默认不允许，保证无线配对可用）
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"   # 自动编译时用哪个版本（空=最新）
 
@@ -285,6 +286,7 @@ while [ "$#" -gt 0 ]; do
         --no-readme)  MAKE_README=0; shift ;;
         --auto-scrcpy) AUTO_SCRCPY=1; shift ;;
         --no-auto-adb) AUTO_ADB=0; shift ;;
+        --no-auto-download) AUTO_DOWNLOAD=0; shift ;;
         --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
         --scrcpy-version)
             if [ "$#" -lt 2 ]; then
@@ -647,34 +649,61 @@ if [ -n "$SCRCPY_REASON" ]; then
 
     if [ -x "$VENDOR_SCRCPY/bin/scrcpy" ] \
        && [ -f "$VENDOR_SCRCPY/share/scrcpy/scrcpy-server" ]; then
-        info "改用项目内已编译好的 scrcpy：$VENDOR_SCRCPY"
-        SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
-        SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
-        SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
-        SCRCPY_REASON=""
-    elif [ "$AUTO_SCRCPY" -eq 1 ]; then
-        info "启用 --auto-scrcpy：从源码编译 scrcpy 到项目 vendor/（不污染系统）"
-        build_scrcpy_from_source
+        info "改用项目内已有的 scrcpy：$VENDOR_SCRCPY"
         SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
         SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
         SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
         SCRCPY_REASON=""
     else
-        warn "提示：加上 --auto-scrcpy 可以让本脚本自动源码编译 scrcpy 到项目 vendor/ 目录，"
-        warn "      也可以手动指定：SCRCPY_BIN=/usr/local/bin/scrcpy SCRCPY_SERVER=/路径/scrcpy-server"
-        case "$SCRCPY_REASON" in
-            old)
-                warn "继续将打包这个旧版本。按 Ctrl+C 中止，或等 10 秒继续…"
-                sleep 10 ;;
-            snap)
-                die "snap 版 scrcpy 无法打包。请源码编译（docs/BUILD.md 第 7 节），
+        # 优先「下载」而不是「编译」：编译 scrcpy + SDL3 要十几分钟
+        GOT_SCRCPY=0
+        if [ "$AUTO_DOWNLOAD" -eq 1 ]; then
+            info "尝试下载现成的 scrcpy（不编译，来自 Debian/Ubuntu 归档）…"
+            if download_prebuilt_scrcpy "$VENDOR_DIR/deb-scrcpy"; then
+                if install_scrcpy_tree "$VENDOR_DIR/deb-scrcpy" "$VENDOR_SCRCPY"; then
+                    SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
+                    SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
+                    SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
+                    if [ -n "$SCRCPY_VER" ] \
+                       && ver_ge "$SCRCPY_VER" "$MIN_SCRCPY" \
+                       && [ -f "$SERVER_SRC" ]; then
+                        info "已把下载的 scrcpy $SCRCPY_VER 放进项目（不用编译）"
+                        GOT_SCRCPY=1
+                        SCRCPY_REASON=""
+                    else
+                        warn "  · 下载的版本 ${SCRCPY_VER:-未知} 仍不满足要求（≥ $MIN_SCRCPY）"
+                    fi
+                fi
+            fi
+        fi
+
+        if [ "$GOT_SCRCPY" -eq 1 ]; then
+            :
+        elif [ "$AUTO_SCRCPY" -eq 1 ]; then
+            info "启用 --auto-scrcpy：从源码编译 scrcpy 到项目 vendor/（不污染系统）"
+            build_scrcpy_from_source
+            SCRCPY_BIN="$VENDOR_SCRCPY/bin/scrcpy"
+            SERVER_SRC="$VENDOR_SCRCPY/share/scrcpy/scrcpy-server"
+            SCRCPY_VER="$(read_scrcpy_ver "$SCRCPY_BIN")"
+            SCRCPY_REASON=""
+        else
+            warn "提示：加上 --auto-scrcpy 可以让本脚本自动源码编译 scrcpy 到项目 vendor/ 目录，"
+            warn "      也可以手动指定：SCRCPY_BIN=/usr/local/bin/scrcpy SCRCPY_SERVER=/路径/scrcpy-server"
+            case "$SCRCPY_REASON" in
+                old)
+                    warn "继续将打包这个旧版本。按 Ctrl+C 中止，或等 10 秒继续…"
+                    sleep 10 ;;
+                snap)
+                    die "snap 版 scrcpy 无法打包。请源码编译（docs/BUILD.md 第 7 节），
      或加 --auto-scrcpy 让本脚本自动编译。" ;;
-            *)
-                die "没有可用的 scrcpy，无法继续。三种解法：
+                *)
+                    die "没有可用的 scrcpy，无法继续。三种解法：
      1) ./build-appimage.sh --auto-scrcpy            （自动源码编译到项目 vendor/）
      2) 先手动源码编译，见 docs/BUILD.md 第 7 节
-     3) 手动指定已有版本：SCRCPY_BIN=... ADB_BIN=... SCRCPY_SERVER=... ./build-appimage.sh" ;;
-        esac
+     3) 手动指定已有版本：SCRCPY_BIN=... ADB_BIN=... SCRCPY_SERVER=... ./build-appimage.sh
+     （联网时会自动尝试从 Debian/Ubuntu 归档下载现成的包；加 --no-auto-download 可关掉）" ;;
+            esac
+        fi
     fi
 fi
 

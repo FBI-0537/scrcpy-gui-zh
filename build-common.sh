@@ -501,6 +501,152 @@ check_tool_version() {
 }
 
 # ---------------------------------------------------------------------------
+# 下载现成的 scrcpy（不编译）
+# ---------------------------------------------------------------------------
+# Linux 上 scrcpy 官方**不提供**预编译二进制，所以退而求其次：
+# 从 Debian / Ubuntu 归档里取现成的 .deb 解包，再**实际运行一次**验证。
+# 跑不起来（glibc 或依赖库版本不匹配）就返回失败，交给源码编译兜底。
+
+deb_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64)  printf 'amd64' ;;
+        aarch64|arm64) printf 'arm64' ;;
+        *)             printf '' ;;
+    esac
+}
+
+# download_prebuilt_scrcpy <目标目录>
+# 成功时目标目录下是解包后的 Debian 目录结构（usr/bin/scrcpy ...）
+download_prebuilt_scrcpy() {
+    local dest="$1"
+    local arch best base index url tmp deb out missing
+
+    arch="$(deb_arch)"
+    if [ -z "$arch" ]; then
+        warn "  · 未知架构 $(uname -m)，无法从归档下载"
+        return 1
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        warn "  · 没有 curl，跳过下载"
+        return 1
+    fi
+
+    best=""
+    url=""
+    for base in "http://archive.ubuntu.com/ubuntu/pool/universe/s/scrcpy" \
+                "http://deb.debian.org/debian/pool/main/s/scrcpy"; do
+        index="$(curl -fsSL --max-time 25 "$base/" 2>/dev/null || true)"
+        if [ -z "$index" ]; then
+            continue
+        fi
+        best="$(printf '%s\n' "$index" \
+            | sed -n "s/.*href=\"scrcpy_\([0-9][^\"]*\)_${arch}\.deb\".*/\1/p" \
+            | sort -V | tail -1)"
+        if [ -n "$best" ]; then
+            url="$base/scrcpy_${best}_${arch}.deb"
+            break
+        fi
+    done
+    if [ -z "$best" ]; then
+        warn "  · 归档里没有适合 $arch 的 scrcpy 包"
+        return 1
+    fi
+    info "  · 归档里最新的是 scrcpy $best"
+
+    tmp="$(mktemp -d 2>/dev/null || printf '%s' "${dest}.tmp")"
+    mkdir -p "$tmp"
+    deb="$tmp/scrcpy.deb"
+    if ! curl -fL --retry 2 --max-time 300 -o "$deb" "$url"; then
+        warn "  · 下载失败：$url"
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    rm -rf "$dest"
+    mkdir -p "$dest"
+    if command -v dpkg-deb >/dev/null 2>&1; then
+        if ! dpkg-deb -x "$deb" "$dest"; then
+            warn "  · dpkg-deb 解包失败"
+            rm -rf "$tmp" "$dest"
+            return 1
+        fi
+    elif command -v ar >/dev/null 2>&1; then
+        if ! ( cd "$tmp" && ar x "$deb" && tar -xf data.tar.* -C "$dest" ); then
+            warn "  · ar/tar 解包失败"
+            rm -rf "$tmp" "$dest"
+            return 1
+        fi
+    else
+        warn "  · 既没有 dpkg-deb 也没有 ar，无法解包"
+        rm -rf "$tmp" "$dest"
+        return 1
+    fi
+    rm -rf "$tmp"
+
+    if [ ! -x "$dest/usr/bin/scrcpy" ]; then
+        warn "  · 包里没有 usr/bin/scrcpy"
+        rm -rf "$dest"
+        return 1
+    fi
+
+    # 关键一步：包是给别的发行版编的，必须在本机真的跑起来才算数
+    if ! out="$("$dest/usr/bin/scrcpy" --version 2>&1)"; then
+        warn "  · 下载来的 scrcpy 在本机跑不起来（多半是 glibc / 依赖库版本不匹配）"
+        printf '%s\n' "$out" | head -3 | while read -r line; do
+            if [ -n "$line" ]; then
+                warn "      $line"
+            fi
+        done
+        missing="$(ldd "$dest/usr/bin/scrcpy" 2>/dev/null | grep 'not found' | head -5 || true)"
+        if [ -n "$missing" ]; then
+            printf '%s\n' "$missing" | while read -r line; do
+                warn "      $line"
+            done
+        fi
+        rm -rf "$dest"
+        return 1
+    fi
+    printf '%s\n' "$out" | head -1
+    return 0
+}
+
+# 把解包出来的 Debian 目录结构整理成项目约定的 vendor/scrcpy 布局
+# install_scrcpy_tree <解包目录> <vendor/scrcpy>
+install_scrcpy_tree() {
+    local src="$1" dest="$2" server
+    if [ ! -x "$src/usr/bin/scrcpy" ]; then
+        return 1
+    fi
+    rm -rf "$dest"
+    mkdir -p "$dest/bin" "$dest/share/scrcpy"
+    cp -L "$src/usr/bin/scrcpy" "$dest/bin/scrcpy" || return 1
+    chmod +x "$dest/bin/scrcpy"
+
+    server=""
+    for cand in "$src/usr/share/scrcpy/scrcpy-server" \
+                "$src/usr/lib/scrcpy/scrcpy-server" \
+                "$src/usr/local/share/scrcpy/scrcpy-server"; do
+        if [ -f "$cand" ]; then
+            server="$cand"
+            break
+        fi
+    done
+    if [ -z "$server" ]; then
+        # 兜底：全树搜一遍
+        server="$(find "$src" -name 'scrcpy-server' -type f 2>/dev/null | head -1 || true)"
+    fi
+    if [ -n "$server" ] && [ -f "$server" ]; then
+        cp -L "$server" "$dest/share/scrcpy/scrcpy-server"
+    fi
+
+    # 包里若自带库就一并带上
+    find "$src/usr/lib" -name 'lib*.so*' -type f 2>/dev/null | head -40 | while read -r lib; do
+        cp -L "$lib" "$dest/" 2>/dev/null || true
+    done
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # adb 版本 / mdns 支持
 # ---------------------------------------------------------------------------
 # `adb mdns` 是 platform-tools 30（2020）才加的子命令。老发行版源里的 adb
