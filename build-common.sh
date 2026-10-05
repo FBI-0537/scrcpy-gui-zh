@@ -54,10 +54,10 @@ detect_distro() {
     DISTRO_NAME=""
 
     if [ -r /etc/os-release ]; then
-        DISTRO_ID="$(sed -n 's/^ID=//p' /etc/os-release | head -1 | tr -d '"')"
-        DISTRO_LIKE="$(sed -n 's/^ID_LIKE=//p' /etc/os-release | head -1 | tr -d '"')"
-        DISTRO_VER="$(sed -n 's/^VERSION_ID=//p' /etc/os-release | head -1 | tr -d '"')"
-        DISTRO_NAME="$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | head -1 | tr -d '"')"
+        DISTRO_ID="$(sed -n 's/^ID=//p' /etc/os-release | sed -n '1p' | tr -d '"')"
+        DISTRO_LIKE="$(sed -n 's/^ID_LIKE=//p' /etc/os-release | sed -n '1p' | tr -d '"')"
+        DISTRO_VER="$(sed -n 's/^VERSION_ID=//p' /etc/os-release | sed -n '1p' | tr -d '"')"
+        DISTRO_NAME="$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | sed -n '1p' | tr -d '"')"
     fi
     [ -n "$DISTRO_NAME" ] || DISTRO_NAME="${DISTRO_ID:-未知发行版}"
 
@@ -105,7 +105,7 @@ distro_family_zh() {
 }
 
 libc_flavor() {
-    if ldd --version 2>&1 | head -1 | grep -qi musl; then
+    if ldd --version 2>&1 | sed -n '1p' | grep -qi musl; then
         printf 'musl'
     else
         printf 'glibc'
@@ -464,11 +464,11 @@ ver_ge() {
 version_of() {
     case "$1" in
         python3)   python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null ;;
-        meson)     meson --version 2>/dev/null | head -1 ;;
-        ninja)     ninja --version 2>/dev/null | head -1 ;;
-        cmake)     cmake --version 2>/dev/null | head -1 | sed 's/[^0-9.]//g' ;;
-        gcc)       gcc -dumpversion 2>/dev/null | head -1 ;;
-        pkgconfig) pkg-config --version 2>/dev/null | head -1 ;;
+        meson)     meson --version 2>/dev/null | sed -n '1p' ;;
+        ninja)     ninja --version 2>/dev/null | sed -n '1p' ;;
+        cmake)     cmake --version 2>/dev/null | sed -n '1p' | sed 's/[^0-9.]//g' ;;
+        gcc)       gcc -dumpversion 2>/dev/null | sed -n '1p' ;;
+        pkgconfig) pkg-config --version 2>/dev/null | sed -n '1p' ;;
         *)         printf '' ;;
     esac
 }
@@ -739,12 +739,12 @@ download_prebuilt_scrcpy() {
     # 关键一步：包是给别的发行版编的，必须在本机真的跑起来才算数
     if ! out="$("$dest/usr/bin/scrcpy" --version 2>&1)"; then
         warn "  · 下载来的 scrcpy 在本机跑不起来（多半是 glibc / 依赖库版本不匹配）"
-        printf '%s\n' "$out" | head -3 | while read -r line; do
+        printf '%s\n' "$out" | sed -n '1,3p' | while read -r line; do
             if [ -n "$line" ]; then
                 warn "      $line"
             fi
         done
-        missing="$(ldd "$dest/usr/bin/scrcpy" 2>/dev/null | grep 'not found' | head -5 || true)"
+        missing="$(ldd "$dest/usr/bin/scrcpy" 2>/dev/null | grep 'not found' | sed -n '1,5p' || true)"
         if [ -n "$missing" ]; then
             printf '%s\n' "$missing" | while read -r line; do
                 warn "      $line"
@@ -753,7 +753,7 @@ download_prebuilt_scrcpy() {
         rm -rf "$dest"
         return 1
     fi
-    printf '%s\n' "$out" | head -1
+    printf '%s\n' "$out" | sed -n '1p'
     return 0
 }
 
@@ -772,7 +772,7 @@ KNOWN_GLIBC="2.28:Debian 10
 2.41:Debian 13"
 
 host_glibc() {
-    ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1
+    ldd --version 2>/dev/null | sed -n '1p' | grep -oE '[0-9]+\.[0-9]+' | sed -n '1p'
 }
 
 # 打印「这个 glibc 下限的产物能用在哪些系统上」
@@ -831,14 +831,14 @@ install_scrcpy_tree() {
     done
     if [ -z "$server" ]; then
         # 兜底：全树搜一遍
-        server="$(find "$src" -name 'scrcpy-server' -type f 2>/dev/null | head -1 || true)"
+        server="$(find "$src" -name 'scrcpy-server' -type f 2>/dev/null | sed -n '1p' || true)"
     fi
     if [ -n "$server" ] && [ -f "$server" ]; then
         cp -L "$server" "$dest/share/scrcpy/scrcpy-server"
     fi
 
     # 包里若自带库就一并带上
-    find "$src/usr/lib" -name 'lib*.so*' -type f 2>/dev/null | head -40 | while read -r lib; do
+    find "$src/usr/lib" -name 'lib*.so*' -type f 2>/dev/null | sed -n '1,40p' | while read -r lib; do
         cp -L "$lib" "$dest/" 2>/dev/null || true
     done
     return 0
@@ -870,11 +870,11 @@ adb_version_text() {
         return
     fi
     out="$("$bin" --version 2>/dev/null || true)"
-    ver="$(printf '%s\n' "$out" | sed -n 's/^Version //p' | head -1)"
+    ver="$(printf '%s\n' "$out" | sed -n 's/^Version //p' | sed -n '1p')"
     if [ -n "$ver" ]; then
         printf '%s' "$ver"
     else
-        printf '%s' "$(printf '%s\n' "$out" | head -1)"
+        printf '%s' "$(printf '%s\n' "$out" | sed -n '1p')"
     fi
 }
 
@@ -914,7 +914,7 @@ fetch_platform_tools() {
 
     if [ ! -e "$dest/adb" ]; then
         warn "解压后没找到 $dest/adb，目录内容："
-        ls -l "$dest" 2>/dev/null | head -8 || true
+        ls -l "$dest" 2>/dev/null | sed -n '1,8p' || true
         return 1
     fi
     # 关键：python3 -m zipfile 不保留可执行位，这里统一补上

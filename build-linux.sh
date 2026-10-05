@@ -141,7 +141,7 @@ install_keys_optional() {
 }
 
 read_scrcpy_ver() {
-    "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1 || true
+    "$1" --version 2>/dev/null | sed -n '1p' | grep -oE '[0-9]+\.[0-9]+' | sed -n '1p' || true
 }
 
 scrcpy_usable() {
@@ -167,7 +167,7 @@ scrcpy_usable() {
 github_latest_tag() {
     curl -fsSL --max-time 25 "$1" 2>/dev/null \
         | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-        | head -1 || true
+        | sed -n '1p' || true
 }
 
 find_first() {

@@ -316,8 +316,8 @@ for t in "${TARGETS[@]}"; do
         FAILED+=("$image $plat（容器起不来）")
         continue
     fi
-    CONTAINER_GLIBC="$($DOCKER run --rm "${RUN_ARGS[@]}" "$image" sh -c 'ldd --version 2>/dev/null | head -1' 2>/dev/null \
-        | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)"
+    CONTAINER_GLIBC="$($DOCKER run --rm "${RUN_ARGS[@]}" "$image" sh -c 'ldd --version 2>/dev/null | sed -n 1p' 2>/dev/null \
+        | grep -oE '[0-9]+\.[0-9]+' | sed -n '1p' || true)"
     info "容器：$CONTAINER_ARCH${CONTAINER_GLIBC:+  glibc $CONTAINER_GLIBC}"
 
     # 非 x86_64 上 Google 不提供 platform-tools，发行版自带 adb 常低于 30，
