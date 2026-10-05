@@ -1,7 +1,10 @@
 name: Release
 
 # 打 tag（v1.0.0）→ 自动构建全矩阵 → 验收 → 上传到 GitHub Release 资产
-# 也可以手动触发（Actions → Release → Run workflow），只构建不发布，方便先测试
+# 也可以手动触发（Actions → Release → Run workflow）：
+#   mode=fast  只构建 1 个 x86_64 目标（约 20 分钟），用来验证流水线
+#   mode=full  构建全部 6 个 Linux 目标 + Windows（ARM 走 QEMU，很慢）
+# 手动触发只上传 artifact，不发布 Release（发布只在打 tag 时发生）
 
 on:
   push:
@@ -12,58 +15,80 @@ on:
         description: "版本号（不含 v），例如 1.0.0"
         required: true
         default: "1.0.0"
+      mode:
+        description: "构建范围"
+        required: true
+        default: "fast"
+        type: choice
+        options:
+          - fast
+          - full
 
 permissions:
   contents: write
 
 jobs:
   # ---------------------------------------------------------------------------
+  # 先算出这次要构建哪些目标
+  #
+  # 为什么 Linux 目标都带 --auto-scrcpy：
+  #   scrcpy 在 Debian 11/12、Ubuntu 的仓库里要么没有、要么低于 2.2（投不了
+  #   Android 14+）；从 Debian/Ubuntu 归档下载现成的 .deb 又常因 glibc 不匹配
+  #   跑不起来。所以必须让构建脚本自己源码编译 scrcpy 到 vendor/。
+  # ---------------------------------------------------------------------------
+  plan:
+    name: 规划构建目标
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      version: ${{ steps.gen.outputs.version }}
+    steps:
+      - id: gen
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            ver="${GITHUB_REF_NAME#v}"
+          else
+            ver="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+          fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
+          full='{"include":[
+            {"image":"debian:11","platform":"linux/amd64","label":"glibc2.31-x86_64","extra":"--auto-scrcpy"},
+            {"image":"ubuntu:22.04","platform":"linux/amd64","label":"glibc2.35-x86_64","extra":"--auto-scrcpy"},
+            {"image":"ubuntu:24.04","platform":"linux/amd64","label":"glibc2.39-x86_64","extra":"--auto-scrcpy"},
+            {"image":"debian:11","platform":"linux/arm64","label":"glibc2.31-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"ubuntu:22.04","platform":"linux/arm64","label":"glibc2.35-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"debian:11","platform":"linux/arm/v7","label":"glibc2.31-armv7l","extra":"--auto-scrcpy --allow-old-adb"}
+          ]}'
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            mode="full"
+          else
+            mode="${{ github.event.inputs.mode }}"
+          fi
+          if [ "$mode" = "fast" ]; then
+            echo "matrix=$fast" >> "$GITHUB_OUTPUT"
+          else
+            # 多行 JSON 需要转成单行放进 GITHUB_OUTPUT
+            printf 'matrix=%s\n' "$(printf '%s' "$full" | tr -d '\n')" >> "$GITHUB_OUTPUT"
+          fi
+          echo "本次模式：$mode"
+
+  # ---------------------------------------------------------------------------
   # Linux：在容器里构建，用最老的发行版拿到最广的兼容面
   # ---------------------------------------------------------------------------
   linux:
     name: Linux ${{ matrix.label }}
+    needs: plan
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - image: debian:11
-            platform: linux/amd64
-            label: glibc2.31-x86_64
-            extra: ""
-          - image: ubuntu:22.04
-            platform: linux/amd64
-            label: glibc2.35-x86_64
-            extra: ""
-          - image: ubuntu:24.04
-            platform: linux/amd64
-            label: glibc2.39-x86_64
-            extra: ""
-          - image: debian:11
-            platform: linux/arm64
-            label: glibc2.31-aarch64
-            extra: "--allow-old-adb"
-          - image: ubuntu:22.04
-            platform: linux/arm64
-            label: glibc2.35-aarch64
-            extra: "--allow-old-adb"
-          - image: debian:11
-            platform: linux/arm/v7
-            label: glibc2.31-armv7l
-            extra: "--allow-old-adb"
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: 解析版本号
-        id: ver
-        shell: bash
-        run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-          fi
 
       # ARM 架构靠 QEMU 模拟（GitHub 托管的 runner 需要这一步）
       - uses: docker/setup-qemu-action@v3
@@ -74,7 +99,7 @@ jobs:
           docker run --rm \
             --platform ${{ matrix.platform }} \
             -v "$PWD:/src" -w /src \
-            -e APP_VER="${{ steps.ver.outputs.version }}" \
+            -e APP_VER="${{ needs.plan.outputs.version }}" \
             ${{ matrix.image }} \
             bash -c "./build-linux.sh --yes ${{ matrix.extra }}"
 
@@ -89,23 +114,15 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Windows：单个 exe（内含 scrcpy / adb / 其依赖 DLL）
+  # 只在 full 模式或打 tag 时构建
   # ---------------------------------------------------------------------------
   windows:
     name: Windows x86_64
+    needs: plan
+    if: ${{ github.ref_type == 'tag' || github.event.inputs.mode == 'full' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: 解析版本号
-        id: ver
-        shell: pwsh
-        run: |
-          if ("${{ github.ref_type }}" -eq "tag") {
-            $v = "${{ github.ref_name }}".TrimStart("v")
-          } else {
-            $v = "${{ github.event.inputs.version }}"
-          }
-          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - uses: actions/setup-python@v5
         with:
@@ -118,7 +135,7 @@ jobs:
       - name: 规范化产物名
         shell: pwsh
         run: |
-          $ver = "${{ steps.ver.outputs.version }}"
+          $ver = "${{ needs.plan.outputs.version }}"
           $exe = Get-ChildItem -Path dist -Filter *.exe | Select-Object -First 1
           if (-not $exe) { throw "没有生成 exe" }
           $dst = Join-Path "dist" "scrcpy-gui-zh-$ver-windows-x86_64.exe"
@@ -135,13 +152,13 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # 发布：把上面所有产物汇总成 GitHub Release 资产
+  # 发布：把上面所有产物汇总成 GitHub Release 资产（仅打 tag 时）
   # ---------------------------------------------------------------------------
   publish:
     name: 上传到 Release
-    needs: [linux, windows]
+    needs: [plan, linux, windows]
+    if: ${{ always() && github.ref_type == 'tag' && needs.linux.result == 'success' }}
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -158,4 +175,4 @@ jobs:
         with:
           files: assets/*
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
