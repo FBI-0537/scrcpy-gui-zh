@@ -1,0 +1,14 @@
+# 换行符策略
+# 仓库内统一用 LF；否则 Windows 上 clone 会把 shell 脚本变成 CRLF，
+# 到 Linux 上会报 "/usr/bin/env: 'bash\r': No such file or directory"。
+* text=auto eol=lf
+
+# Windows 脚本用 CRLF 更稳（批处理的标签解析对 LF 敏感）
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# 二进制，别做任何转换
+*.png  binary
+*.ico  binary
+*.AppImage binary
