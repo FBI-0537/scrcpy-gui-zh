@@ -376,6 +376,29 @@ install_keys() {
     pkg_install "${names[@]}"
 }
 
+# 尽力安装：失败也不退出，返回 0（由调用方自己重新检测装上了没有）
+#
+# 用途：有些「逻辑依赖」在某些发行版里根本没有对应包 —— 例如 scrcpy 在
+# Debian 12 (bookworm) 的仓库里不存在。这种时候必须让包管理器失败**并继续**，
+# 才能走到后面的兜底路径（从归档下载 / 源码编译）。
+# 绝不能在这里用 ensure_deps —— 它会 die，把兜底全堵死。
+try_install_keys() {
+    if [ "$#" -eq 0 ]; then
+        return 0
+    fi
+    if install_keys "$@"; then
+        return 0
+    fi
+    warn "包管理器安装失败，刷新软件源后重试一次…"
+    pkg_refresh || true
+    if install_keys "$@"; then
+        return 0
+    fi
+    warn "包管理器仍然装不上：$(pkg_hint "$@")"
+    warn "（这不是致命错误：接下来会尝试从归档下载或源码编译）"
+    return 0
+}
+
 pkg_is_installed() {
     local p="$1"
     case "$DISTRO_FAMILY" in

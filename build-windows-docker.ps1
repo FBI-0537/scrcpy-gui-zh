@@ -60,6 +60,7 @@ param(
     [string]$Dns = '',
     [string]$PipMirror = '',
     [string]$ExtraEnv = '',
+    [switch]$AutoScrcpy,
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
@@ -358,6 +359,9 @@ foreach ($t in $Targets) {
     # --allow-old-adb 让「拿不到时」继续构建而不是中止。
     $inner = './build-linux.sh --yes'
     if ($t.Arch -in @('arm64', 'armhf')) { $inner += ' --allow-old-adb' }
+    # scrcpy 在 Debian 12 (bookworm) 等发行版的仓库里根本不存在，
+    # 从归档下载也常因 glibc 不匹配失败 —— 加上这个就在容器里源码编译
+    if ($AutoScrcpy) { $inner += ' --auto-scrcpy' }
 
     # 红帽 / Arch / openSUSE 里没有 Debian 系现成包可用（glibc 不匹配），
     # scrcpy 只能源码编译 —— 自动带上 --auto-scrcpy，否则会因为找不到 scrcpy 而中止

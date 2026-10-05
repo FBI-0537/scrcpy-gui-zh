@@ -572,7 +572,16 @@ if [ -z "$ADB_BIN" ]; then
     MISSING_DESC+=("adb 未安装（scrcpy 依赖它）")
 fi
 if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
-    ensure_deps
+    # 这里刻意**不用 ensure_deps** —— 它会 die。
+    # scrcpy 在部分发行版（例如 Debian 12 bookworm）的仓库里根本没有，
+    # 必须让包管理器失败后**继续**，才能走到下面的三级兜底：
+    #   ① vendor/ 里已有的 → ② 从 Debian/Ubuntu 归档下载 → ③ 源码编译
+    if [ "$AUTO_INSTALL" -eq 1 ]; then
+        info "尝试用包管理器安装：$(pkg_hint "${MISSING_PKGS[@]}")"
+        try_install_keys "${MISSING_PKGS[@]}"
+    else
+        warn "已指定 --no-install，跳过包管理器安装，直接用兜底方案"
+    fi
     if [ -z "$SCRCPY_BIN" ]; then
         SCRCPY_BIN="$(find_first "$(command -v scrcpy 2>/dev/null || true)" \
             /usr/local/bin/scrcpy /usr/bin/scrcpy /snap/bin/scrcpy)" || SCRCPY_BIN=""

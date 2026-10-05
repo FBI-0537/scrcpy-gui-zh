@@ -27,6 +27,9 @@ REM      build-windows-docker.cmd -AllDistros            per-distro-family matri
 REM      build-windows-docker.cmd -AptMirror http://mirrors.tuna.tsinghua.edu.cn -PipMirror https://pypi.tuna.tsinghua.edu.cn/simple
 REM                                                      use Chinese mirrors (apt / pip)
 REM      build-windows-docker.cmd -Dns 223.5.5.5           bypass a hijacked host DNS
+REM      build-windows-docker.cmd -AutoScrcpy              compile scrcpy inside the
+REM                                                      container (needed on Debian 12+,
+REM                                                      whose repo has no scrcpy)
 REM
 REM  Prerequisites: Docker Desktop running; 6 GB+ RAM, 20 GB+ disk for Docker.
 REM ===========================================================================
