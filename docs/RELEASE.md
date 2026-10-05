@@ -89,7 +89,7 @@ scrcpy-gui-zh-1.0.0-windows-x86_64.exe             ← Windows
 - [ ] `CHANGELOG.md` 已更新，`git log` 里没有未提交的改动
 - [ ] Release 说明里写明：
   - [ ] Linux 上首次使用要装一次 udev 规则（程序会引导）
-  - [ ] **ARM 产物不支持无线配对**（`adb pair` 需要 platform-tools ≥ 30，
+  - [ ] **ARM 产物的无线配对：debian:12 / debian:13 构建的有，debian:11 构建的没有**
         Google 官方只提供 x86_64 版）—— USB 与「USB 转无线」正常
   - [ ] 无桌面环境的服务器上跑不起来（需要 X11/Wayland）
 

@@ -256,9 +256,9 @@ docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
 | debian:11 | linux/amd64 | 2.31 | 兼容面最广（推荐发布） |
 | ubuntu:22.04 | linux/amd64 | 2.35 | 中等 |
 | ubuntu:24.04 | linux/amd64 | 2.39 | 较新 |
-| debian:11 | linux/arm64 | 2.31 | 树莓派 4/5 64 位系统 |
-| ubuntu:22.04 | linux/arm64 | 2.35 | 中等 |
-| debian:11 | linux/arm/v7 | 2.31 | 32 位 ARM |
+| **debian:12** | linux/arm64 | 2.36 | 树莓派 4/5 64 位系统，**无线配对可用** |
+| debian:11 | linux/arm64 | 2.31 | 兼容最老的 ARM，无无线配对 |
+| **debian:12** | linux/arm/v7 | 2.36 | 32 位 ARM，**无线配对可用** |
 
 **为什么不是"每个发行版打一份"**：决定产物能不能用的不是发行版名字，而是
 **glibc 版本**。Debian 11 构建的产物能跑在 Debian 11/12/13、Ubuntu 20.04+、RHEL 9 上，
@@ -267,7 +267,17 @@ docker run --rm -v "$PWD/dist:/d" debian:11 /d/<产物文件名> --selftest
 
 **⚠️ ARM 架构的两个已知限制**（脚本会自动处理，但要心里有数）：
 
-1. **无线配对在 ARM 上大概率不可用**：Google 官方的 platform-tools **只有 x86_64 版**。
+1. **无线配对取决于基础镜像的 glibc**（决定能否拿到 adb ≥ 30）：
+   Google 官方 platform-tools 只有 x86_64 版，但 **Debian/Ubuntu 归档里有 arm64/armhf 的 adb**，
+   只是版本受 glibc 约束 —— 构建脚本会从新到旧逐个下载、**实际运行验证**，用第一个能跑的：
+
+   | 基础镜像 | ARM 上拿到的 adb | 无线配对 |
+   |---|---|---|
+   | **debian:12**（glibc 2.36） | 34.0.5（bookworm-backports） | ✅ 可用 |
+   | debian:13（glibc 2.41） | 34.0.5 | ✅ 可用 |
+   | debian:11（glibc 2.31） | 拿不到（候选都要更高 glibc） | ❌ 只有 USB / USB 转无线 |
+
+   所以**默认矩阵里 ARM 用 debian:12**。原有的说明段落如下（保留供参考）：
    脚本会改成从 Debian/Ubuntu 归档取本架构的 `adb`，但这些包通常低于 platform-tools 30，
    所以 `adb pair` / `adb mdns`（方式二 / 方式三）用不了。**USB 直连与方式一（USB 转无线）正常。**
    因此 `build-docker.sh` 对非 x86_64 目标会自动加 `--allow-old-adb`。

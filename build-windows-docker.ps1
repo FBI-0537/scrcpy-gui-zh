@@ -73,9 +73,9 @@ $MatrixDefault = @(
     @{ Image = 'debian:11';    Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 11（glibc 2.31）—— 兼容面最广，推荐发布' }
     @{ Image = 'ubuntu:22.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 22.04（glibc 2.35）' }
     @{ Image = 'ubuntu:24.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 24.04（glibc 2.39）' }
-    @{ Image = 'debian:11';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 11 arm64（glibc 2.31）—— 树莓派 4/5 64 位系统' }
-    @{ Image = 'ubuntu:22.04'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Ubuntu 22.04 arm64（glibc 2.35）' }
-    @{ Image = 'debian:11';    Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 11 armhf（glibc 2.31）—— 32 位 ARM' }
+    @{ Image = 'debian:12';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（glibc 2.36）—— 无线配对可用' }
+    @{ Image = 'debian:11';    Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 11 arm64（glibc 2.31）—— 兼容最老的 ARM，无无线配对' }
+    @{ Image = 'debian:12';    Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（glibc 2.36）—— 无线配对可用' }
 )
 
 $MatrixAll = @(
@@ -199,7 +199,9 @@ foreach ($t in $Targets) {
     }
     Say "  容器架构：$carch"
 
-    # 非 x86_64 上 Google 不提供 platform-tools，发行版自带的 adb 常低于 30，
+    # 非 x86_64 上 Google 不提供 platform-tools：脚本会从 Debian/Ubuntu 归档取本架构
+    # 的 adb（debian:12 能拿到 34.0.5 → 无线配对可用；debian:11 拿不到）。
+    # --allow-old-adb 让「拿不到时」继续构建而不是中止。
     # 加上这个开关让构建继续（代价：该架构产物没有无线配对功能）
     $inner = './build-linux.sh --yes'
     if ($t.Arch -in @('arm64', 'armhf')) { $inner += ' --allow-old-adb' }

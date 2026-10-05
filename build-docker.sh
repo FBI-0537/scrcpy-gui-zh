@@ -61,10 +61,13 @@ MATRIX_DEFAULT="
 linux/amd64|debian:11|x86_64|Debian 11（glibc 2.31）—— 兼容面最广，推荐发布
 linux/amd64|ubuntu:22.04|x86_64|Ubuntu 22.04（glibc 2.35）
 linux/amd64|ubuntu:24.04|x86_64|Ubuntu 24.04（glibc 2.39）
-linux/arm64|debian:11|arm64|Debian 11 arm64（glibc 2.31）—— 树莓派 4/5 64 位系统
-linux/arm64|ubuntu:22.04|arm64|Ubuntu 22.04 arm64（glibc 2.35）
-linux/arm/v7|debian:11|armhf|Debian 11 armhf（glibc 2.31）—— 32 位 ARM
+linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36）—— 无线配对可用
+linux/arm64|debian:11|arm64|Debian 11 arm64（glibc 2.31）—— 兼容最老的 ARM，无无线配对
+linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36）—— 无线配对可用
 "
+# 说明：ARM 上能否无线配对取决于基础镜像的 glibc ——
+#   debian:12（glibc 2.36）能装 bookworm-backports 的 adb 34.0.5 → 有 adb pair
+#   debian:11（glibc 2.31）所有候选 adb 都跑不起来 → 只有 USB / USB 转无线
 
 MATRIX_ALL="
 linux/amd64|debian:11|x86_64|Debian 11（glibc 2.31）

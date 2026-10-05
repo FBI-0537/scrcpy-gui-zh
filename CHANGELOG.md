@@ -65,6 +65,19 @@
   最小窗口尺寸从 780×640 放宽到 720×480
 
 ### 精简
+- **ARM 默认矩阵改为 debian:12，产物自带无线配对能力**：ARM 上能否无线配对取决于
+  基础镜像的 glibc（决定能否从归档取到 adb ≥ 30）：
+  | 基础镜像 | 拿到的 adb | 无线配对 |
+  |---|---|---|
+  | debian:12（glibc 2.36） | 34.0.5（bookworm-backports） | 可用 |
+  | debian:13（glibc 2.41） | 34.0.5 | 可用 |
+  | debian:11（glibc 2.31） | 候选都要更高 glibc，拿不到 | 只有 USB / USB 转无线 |
+  默认矩阵的 arm64 与 armhf 都改成 debian:12，同时保留 debian:11 arm64
+  作为「兼容最老 ARM 但无无线配对」的备选。build-docker.sh 与
+  build-windows-docker.ps1 同步，文档（BUILD.md 2.6、RELEASE.md 检查清单）修正了
+  原先「ARM 上大概率拿不到 platform-tools」的不准确说法。
+
+### 精简
 - **移除 AppImage 支持，容器构建脚本合并为一个**。产物统一为「单个可执行文件」，
   AppImage 这条路已无实际用途，删掉以免维护两份打包逻辑：
   - 删除 `build-appimage.sh`（1017 行）、`build-in-docker.sh`、`build-all.sh`
