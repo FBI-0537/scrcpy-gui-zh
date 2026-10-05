@@ -383,6 +383,82 @@ def adb_too_old_hint(feature="无线调试"):
         % (adb_version_text(), feature, PLATFORM_TOOLS_URL))
 
 
+def in_virtual_machine():
+    """是否跑在虚拟机里，返回虚拟机类型名（不在虚拟机里返回空串）。
+
+    mDNS 靠组播（224.0.0.251:5353）发现设备；虚拟机默认的 NAT 网络等于在
+    宿主机后面又套一层 NAT，组播出不去也进不来，所以这一步必须提示。
+    """
+    if IS_WIN:
+        return ""
+    rc, out = run(["systemd-detect-virt"], timeout=10)
+    if rc == 0:
+        name = out.strip().splitlines()[0].strip() if out.strip() else ""
+        if name and name != "none":
+            return name
+    try:
+        with open("/sys/class/dmi/id/product_name", encoding="utf-8") as handle:
+            name = handle.read().strip()
+    except OSError:
+        name = ""
+    low = name.lower()
+    for key, label in (("vmware", "VMware"), ("virtualbox", "VirtualBox"),
+                       ("kvm", "KVM/QEMU"), ("qemu", "QEMU"),
+                       ("hyper-v", "Hyper-V"), ("parallels", "Parallels"),
+                       ("xen", "Xen"), ("bochs", "Bochs")):
+        if key in low:
+            return label
+    return ""
+
+
+def mdns_troubleshooting_lines():
+    """按「平台 + 是否虚拟机」给出 mDNS 发现失败的排查步骤。"""
+    lines = []
+    vm = in_virtual_machine()
+    if vm:
+        lines += [
+            "★ 检测到你在虚拟机里运行（%s）—— 这极可能就是根因。" % vm,
+            "  虚拟机默认用 NAT 网络，相当于在宿主机后面又套了一层 NAT：",
+            "  mDNS 组播（224.0.0.251:5353）出不去，手机的广播也进不来，",
+            "  所以 adb mdns services 永远是空的。",
+            "  两个办法：",
+            "    · 虚拟机网络改成「桥接模式（Bridged）」后重启虚拟机；",
+            "    · 或者直接用「方式二：配对码配对」—— 它不需要 mDNS。",
+            "",
+        ]
+    if IS_WIN:
+        lines += [
+            "1) 手机是否停留在「正在配对设备」界面（配对服务只在此时广播）",
+            "2) Windows 防火墙：platform-tools\\adb.exe 需在「专用」和「公用」都允许",
+            "3) Wi-Fi 若被识别为「公用网络」，改成「专用网络」再试",
+            "4) 换 mDNS 后端：cmd 执行 set ADB_MDNS_OPENSCREEN=1，再 adb kill-server",
+            "5) 路由器开了 AP 隔离 / 组播过滤也会这样（换个路由器或开热点验证）",
+            "6) 都不通就改用「方式二：配对码」，它不依赖 mDNS",
+        ]
+    else:
+        lines += [
+            "1) 手机是否停留在「正在配对设备」界面（配对服务只在此时广播）",
+            "2) 电脑与手机是否在同一网段：",
+            "       ip -4 addr show | grep inet",
+            "   （校园网/企业网常开客户端隔离，同网段也可能互相看不见）",
+            "3) 防火墙是否放行 5353/udp：",
+            "       sudo ufw status                 # Debian/Ubuntu",
+            "       sudo firewall-cmd --list-all    # Fedora/RHEL",
+            "4) 换 mDNS 后端：ADB_MDNS_OPENSCREEN=1 adb kill-server 后重试",
+            "5) 是否连在「访客网络」，或路由器开了 AP 隔离 / 组播过滤",
+            "6) 都不通就改用「方式二：配对码」，它不依赖 mDNS",
+        ]
+    return lines
+
+
+def connect_trouble_hint():
+    """无线连接失败的排查提示（纯文本，按平台）。"""
+    if IS_WIN:
+        return "检查手机与电脑是否同一局域网、是否被 AP 隔离。"
+    return ("检查手机与电脑是否同一局域网/同一网段（ip -4 addr show | grep inet）、"
+            "是否被客户端隔离；虚拟机 NAT 模式下需改桥接，或改用「方式二：配对码」。")
+
+
 def adb_mdns_trouble_hint(raw=""):
     """adb 版本够新、但 mdns 探测失败的指引（纯文本）。"""
     ver = adb_version_text()
@@ -1443,12 +1519,8 @@ class ScrcpyGui:
                 self.log("   [%s] %s -> %s" % (kind, name, addr))
         else:
             self.log("→ 没有发现任何 ADB mDNS 服务，问题就在这里。按顺序排查：")
-            self.log("  1) 手机是否停留在「正在配对设备」界面（配对服务只在此时广播）")
-            self.log("  2) Windows 防火墙：platform-tools\\adb.exe 需在「专用」和「公用」都允许")
-            self.log("  3) Wi-Fi 若被识别为「公用网络」，改成「专用网络」再试")
-            self.log("  4) 换 mDNS 后端：cmd 执行 set ADB_MDNS_OPENSCREEN=1，再 adb kill-server")
-            self.log("  5) 路由器开了 AP 隔离 / 组播过滤也会这样（换个路由器或开热点验证）")
-            self.log("  6) 都不通就改用「方式二：配对码」，它不依赖 mDNS")
+            for line in mdns_troubleshooting_lines():
+                self.log("  " + line if line.strip() else "  ")
         self.log("=" * 46)
 
     def _render_qr(self, payload):
@@ -1561,11 +1633,8 @@ class ScrcpyGui:
         if not pair_addr:
             self.log("！ 超时未发现配对服务（手机一直停在「正在配对设备」就是这个原因）。")
             self.log("！ 请点「mDNS 诊断」按钮，或按下面顺序排查：")
-            self.log("！ 1) Windows 防火墙放行 platform-tools\\adb.exe（专用+公用）")
-            self.log("！ 2) Wi-Fi 网络配置文件改为「专用网络」")
-            self.log("！ 3) cmd 里 set ADB_MDNS_OPENSCREEN=1 后 adb kill-server 再重试")
-            self.log("！ 4) 路由器 AP 隔离 / 组播过滤；可先用手机热点验证")
-            self.log("！ 5) 退路：改用「方式二：配对码配对」，它不依赖 mDNS")
+            for line in mdns_troubleshooting_lines():
+                self.log("！ " + line if line.strip() else "！")
             self.root.after(0, lambda: self.lbl_qr.configure(text="配对超时，请点「mDNS 诊断」"))
             return
 
@@ -1630,7 +1699,7 @@ class ScrcpyGui:
             self.log("连接成功，回到「投屏」页刷新设备。")
             self.refresh_devices()
         else:
-            self.log("！ 连接失败。检查手机与电脑是否同一局域网、是否被 AP 隔离。")
+            self.log("！ 连接失败。%s" % connect_trouble_hint())
 
     def wifi_pair(self):
         if not self._require_wireless_adb("方式二：配对码配对"):
