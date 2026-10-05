@@ -96,11 +96,25 @@ python scrcpy-gui-zh.py
 
 ### 4.1 一键脚本
 
+**先解决 scrcpy 从哪来。** 构建需要一个 `scrcpy-win64` 目录（内含 `scrcpy.exe`、
+`adb.exe` 和 DLL）。脚本按以下顺序自动获取，正常情况下**你什么都不用手动准备**：
+
+| 顺序 | 来源 | 说明 |
+|---|---|---|
+| 1 | `-BundleScrcpy '<目录>'` | 你已有现成的 scrcpy |
+| 2 | 项目内 `vendor\scrcpy\` | 上次自动下载的，**直接复用，不重复下载** |
+| 3 | 自动下载 | 从 GitHub 取最新 `scrcpy-win64-*.zip`，解压到 `vendor\scrcpy\` |
+
+装到**项目目录**而不是系统目录，好处是：不污染系统、不要管理员权限、
+卸载只需删掉 `vendor` 文件夹、`vendor/` 已在 `.gitignore` 里不会入库。
+
 ```powershell
-.\build-windows.cmd                                  # 无控制台版
+.\build-windows.cmd                                  # 无控制台版（会自动备好 scrcpy）
 .\build-windows.cmd -Console                         # 带控制台，看报错用
-.\build-windows.cmd -BundleScrcpy 'C:\scrcpy' -Clean # 绿色目录版
-.\build-windows.cmd -SingleFile -BundleScrcpy 'C:\scrcpy' -Clean   # 单个 exe
+.\build-windows.cmd -SingleFile -Clean               # 单个自包含 exe
+.\build-windows.cmd -BundleScrcpy 'C:\scrcpy' -Clean # 用自己指定的 scrcpy
+.\build-windows.cmd -ScrcpyVersion 4.1 -SingleFile   # 指定要下载的版本
+.\build-windows.cmd -NoAutoScrcpy -Clean             # 禁止自动下载
 ```
 
 > 推荐用 `build-windows.cmd` 而不是直接跑 `.ps1`：它会先检查并自动补上
@@ -125,9 +139,27 @@ scrcpy / adb / server。代价是**每次启动都要解压，首次启动慢 2�
 |---|---|
 | `-Console` | 生成带控制台的 exe，排错用；默认 `--noconsole` |
 | `-Clean` | 先删 `build\`、`dist\`、`.spec` |
-| `-BundleScrcpy <目录>` | scrcpy-win64 解压目录；用于绿色目录版或 `-SingleFile` |
-| `-SingleFile` | 把 scrcpy/adb/DLL/server 全塞进 exe（需配合 `-BundleScrcpy`） |
+| `-SingleFile` | 把 scrcpy/adb/DLL/server 全塞进 exe |
+| `-BundleScrcpy <目录>` | 手动指定 scrcpy-win64 解压目录（不指定则自动获取） |
+| `-ScrcpyVersion <版本>` | 指定要下载的 scrcpy 版本，如 `4.1`；默认最新 |
+| `-NoAutoScrcpy` | 禁止自动下载 scrcpy |
 | `-NoSegno` | 不装 segno（二维码功能退化） |
+
+构建脚本的 7 个步骤：
+
+| 步骤 | 做什么 |
+|---|---|
+| 1 | 找 python、检查 tkinter |
+| 2 | 安装/检查 PyInstaller 与 segno |
+| 3 | **获取 scrcpy-win64**（指定的 / 项目内复用的 / 自动下载到 `vendor\scrcpy\`） |
+| 4 | 清理旧产物（`-Clean`） |
+| 5 | PyInstaller 打包（`-SingleFile` 时附加 `--add-binary` / `--add-data`） |
+| 6 | 附带 scrcpy（绿色目录版会复制到 `dist\`） |
+| 7 | 汇总产物与使用说明 |
+
+自动下载失败的常见原因是**系统代理开着但代理软件没运行**（报
+`127.0.0.1:7890 连接被拒`）。脚本会提示手动三步做法：下载 zip → 解压 →
+`-BundleScrcpy '<解压目录>'`。
 
 产物：`dist\scrcpy-gui-zh.exe`。
 

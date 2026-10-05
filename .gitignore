@@ -6,6 +6,9 @@ build/
 dist/
 *.spec
 
+# Windows 构建脚本自动下载的 scrcpy（约 40MB，不入库）
+vendor/
+
 # 虚拟环境
 venv/
 .venv/

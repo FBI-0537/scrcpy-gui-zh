@@ -74,28 +74,55 @@ chmod +x dist/scrcpy-gui-zh-1.0.0-x86_64.AppImage
 
 ### 方式 B：Windows exe
 
+**先解决 scrcpy 从哪来。** 构建需要一个 `scrcpy-win64` 目录（内含 `scrcpy.exe`、
+`adb.exe` 和一堆 DLL）。三种方式，脚本都会自动处理：
+
+| 方式 | 你要做什么 | scrcpy 的位置 |
+|---|---|---|
+| **① 不用管（推荐）** | 什么都不做 | 脚本自动从 GitHub 下载最新版，解压到 **`项目\vendor\scrcpy\`** |
+| ② 自己下 | 下好 `scrcpy-win64-vX.X.zip` 解压到任意位置 | 用 `-BundleScrcpy '<解压目录>'` 指定 |
+| ③ 塞到系统 | 解压到 `C:\scrcpy` | 构建需 `-BundleScrcpy 'C:\scrcpy'`；但**运行**时程序会自动找到 |
+
+> 自动下载的那个装在**项目目录里**（`vendor\scrcpy\`），不写系统目录、不需要
+> 管理员权限，卸载只要删掉 `vendor` 文件夹。第二次构建会直接复用，不会重复下载。
+> `vendor/` 已在 `.gitignore` 里，不会进版本库。
+
 ```powershell
 # 需要 Python 3（带 Tkinter）
+
+# 推荐：单个 exe，自动下载 scrcpy 并把它/adb/DLL 全部内嵌
+.\build-windows.cmd -SingleFile -Clean
+
+# 绿色目录版：exe + 随附的 scrcpy 目录
 .\build-windows.cmd -Clean
 
-# 真正单个文件：adb / scrcpy / DLL / server 全部内嵌，一个 exe 走天下
+# 手动指定已有的 scrcpy 目录
 .\build-windows.cmd -SingleFile -BundleScrcpy 'C:\scrcpy' -Clean
 
-# 绿色目录版（exe + 随附的 scrcpy 目录）
-.\build-windows.cmd -BundleScrcpy 'C:\scrcpy' -Clean
+# 指定版本 / 禁止自动下载
+.\build-windows.cmd -ScrcpyVersion 4.1 -SingleFile
+.\build-windows.cmd -NoAutoScrcpy -Clean
 
 .\dist\scrcpy-gui-zh.exe
 ```
+
+自动下载失败时（最常见原因：系统代理开着但代理软件没运行，报
+`127.0.0.1:7890` 连接被拒），脚本会给出**手动下载三步做法**：
+下载 `scrcpy-win64-vX.X.zip` → 解压 → `-BundleScrcpy '<解压目录>'`。
 
 ### 方式 C：直接跑源码（三平台通用）
 
 ```bash
 # 依赖
 #   Linux  : sudo apt install -y python3-tk scrcpy adb
-#   Windows: 下载 scrcpy-win64 解压到 C:\scrcpy（自带 adb.exe）
+#   Windows: scrcpy-win64 解压到 项目\vendor\scrcpy\  或  C:\scrcpy（自带 adb.exe）
 #   可选   : pip install segno        # 二维码配对功能
 python3 scrcpy-gui-zh.py
 ```
+
+程序查找 scrcpy / adb 的顺序：**打包内嵌目录 → 项目 `vendor\scrcpy\` →
+`PATH` → 各平台常见位置**（Windows 还会找 `C:\scrcpy`、`platform-tools`、
+Android SDK 目录等）。
 
 ## 一次性准备（只做一次）
 
@@ -134,6 +161,7 @@ scrcpy-gui-zh/
 ├── assets/
 │   ├── scrcpy-gui-zh.png   AppImage / Linux 图标
 │   └── scrcpy-gui-zh.ico   Windows 图标
+├── vendor/                 Windows 构建脚本自动下载的 scrcpy（不入库）
 ├── docs/
 │   ├── USAGE.md            使用手册（连接方式、参数、快捷键）
 │   ├── BUILD.md            构建编译文档（三种产物、原理、交叉构建）

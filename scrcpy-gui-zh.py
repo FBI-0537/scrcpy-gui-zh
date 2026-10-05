@@ -62,6 +62,20 @@ if getattr(sys, "frozen", False):
                os.path.join(_exe_dir, "platform-tools")]
     _FROZEN_DIRS = tuple(dict.fromkeys(_cands))     # 去重且保序
 
+# 项目目录下的 vendor/：build-windows.ps1 自动下载的 scrcpy 就解压在这里，
+# 源码运行时也能直接用，不必再往系统目录或 C:\scrcpy 里塞。
+try:
+    _BASE_DIR = (os.path.dirname(os.path.abspath(sys.executable))
+                 if getattr(sys, "frozen", False)
+                 else os.path.dirname(os.path.abspath(__file__)))
+except NameError:                      # 极端情况：交互式执行没有 __file__
+    _BASE_DIR = os.getcwd()
+
+VENDOR_DIRS = (
+    os.path.join(_BASE_DIR, "vendor", "scrcpy"),
+    os.path.join(_BASE_DIR, "vendor"),
+)
+
 # Windows 上没有固定的安装路径，这里列出常见解压位置
 WIN_SEARCH_DIRS = _FROZEN_DIRS + tuple(
     d for d in (
@@ -118,18 +132,30 @@ def child_env():
 
 
 def find_exe(name, extra=()):
-    """找可执行文件。
+    """找可执行文件。顺序与文档一致：
 
-    优先级：打包内嵌目录（保证自包含）→ PATH → 各平台常见路径。
+    1) 打包内嵌目录（保证自包含）
+    2) 项目内 vendor/（build-windows.ps1 自动下载的 scrcpy 在这里）
+    3) PATH
+    4) 各平台常见路径
     """
+    suffix = ".exe" if IS_WIN else ""
+
     if getattr(sys, "frozen", False):
         for directory in _FROZEN_DIRS:
-            candidate = os.path.join(directory, name + (".exe" if IS_WIN else ""))
+            candidate = os.path.join(directory, name + suffix)
             if os.path.isfile(candidate):
                 return candidate
+
+    for directory in VENDOR_DIRS:
+        candidate = os.path.join(directory, name + suffix)
+        if os.path.isfile(candidate):
+            return candidate
+
     path = shutil.which(name)          # Windows 下会自动匹配 .exe
     if path:
         return path
+
     candidates = list(extra)
     if IS_WIN:
         for directory in WIN_SEARCH_DIRS:

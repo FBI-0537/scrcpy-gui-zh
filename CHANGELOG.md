@@ -44,7 +44,15 @@
 ### 构建
 - `build-appimage.sh`：9 步流程，自动收集 `ldd` 依赖（排除 glibc 与显卡驱动栈）、
   生成 `AppRun`/`.desktop`/图标、下载对应架构的 `appimagetool`、**解包自检**
-- **Windows 单个文件模式**：`build-windows.ps1 -SingleFile -BundleScrcpy <目录>`
+- **Windows 构建自动准备 scrcpy**：`build-windows.ps1` 按「`-BundleScrcpy` 指定 →
+  项目内 `vendor\scrcpy\` 复用 → 自动从 GitHub 下载最新 `scrcpy-win64`」的顺序获取，
+  装到**项目目录**而非系统目录（不污染系统、不需管理员权限、删 `vendor` 即卸载）；
+  新增 `-ScrcpyVersion`（指定版本）与 `-NoAutoScrcpy`（禁止下载）开关，
+  `vendor/` 已加入 `.gitignore`
+- 程序新增查找路径 **项目 `vendor\scrcpy\`**（源码运行时也能直接用到自动下载的 scrcpy），
+  查找顺序为「打包内嵌目录 → `vendor\scrcpy\` → PATH → 各平台常见位置」
+- `-SingleFile` 不再要求必须配合 `-BundleScrcpy`（没有现成的会自动下载）
+- **Windows 单个文件模式**：`build-windows.ps1 -SingleFile`
   把 `adb.exe`、`scrcpy.exe`、全部 DLL 与 `scrcpy-server` 内嵌进 exe，
   产出一个 80–100 MB 的自包含 exe，目标机器不需要任何附带文件
 - **PyInstaller onefile 适配**：程序会把 `sys._MEIPASS` 解压目录加入
