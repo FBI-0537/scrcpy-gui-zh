@@ -168,38 +168,49 @@ New-Item -ItemType Directory -Force -Path "$Proj\dist" | Out-Null
 
 # ---------------------------------------------------------------------------
 # 挂载自检
-# 注意：docker 会把「正在拉镜像 / 拉取进度」写到 stderr，直接用 2>&1 捕获会混进来，
-# 所以这里只从输出里挑「纯数字行」来判断，不能要求整段输出就是一个数字。
+# 坑：docker 会把「正在拉镜像 / 拉取进度」写到 stderr，用 2>&1 捕获后会和 stdout
+# 混在一起；而且 PowerShell 可能把多行输出当成一个字符串，所以解析数字很脆。
+# 这里改成：① 先显式拉镜像，② 用「哨兵字符串」判断挂载是否成功，
+# ③ 失败时把 docker 的原始输出打出来，方便一次定位。
 # ---------------------------------------------------------------------------
 Say ""
 Say "==> 检查挂载是否正常" Cyan
+Say "  预拉取 debian:12 镜像（第一次会慢一点）…" DarkGray
+& docker pull debian:12 | Out-Null
 
-function Get-ProbeCount {
-    param([string[]]$DockerRunArgs)
-    $raw = & docker run --rm @DockerRunArgs debian:12 sh -c 'ls /src 2>/dev/null | wc -l' 2>&1
-    $nums = @($raw | ForEach-Object { "$_" } | Where-Object { $_ -match '^\s*\d+\s*$' })
-    if ($nums.Count -gt 0) { return [int]$nums[-1].Trim() }
-    return -1
+function Test-MountOnce {
+    param([string[]]$RunArgs)
+    $cmd = 'if [ -f /src/build-linux.sh ]; then echo MOUNT_OK; ls /src | wc -l; else echo MOUNT_FAIL; fi'
+    $raw = (& docker run --rm @RunArgs debian:12 sh -c $cmd 2>&1 | Out-String)
+    $count = -1
+    foreach ($m in [regex]::Matches($raw, '(?m)^\s*(\d+)\s*$')) {
+        $count = [int]$m.Groups[1].Value
+    }
+    return @{ Ok = ($raw -match 'MOUNT_OK'); Count = $count; Raw = $raw }
 }
 
 $MountStyle = 'v'      # 'v' = -v "path:/src"，'mount' = --mount type=bind,...
-$probeCount = Get-ProbeCount @('-v', "${Proj}:/src")
-if ($probeCount -lt 3) {
-    Say "  -v 挂载只读到 $probeCount 个条目，改用 --mount 写法再试一次…" Yellow
-    $probeCount = Get-ProbeCount @('--mount', "type=bind,source=${Proj},target=/src")
-    if ($probeCount -ge 3) { $MountStyle = 'mount' }
+$probe = Test-MountOnce @('-v', "${Proj}:/src")
+if (-not $probe.Ok) {
+    Say "  -v 挂载没通过，改用 --mount 写法再试一次…" Yellow
+    $probe = Test-MountOnce @('--mount', "type=bind,source=${Proj},target=/src")
+    if ($probe.Ok) { $MountStyle = 'mount' }
 }
-if ($probeCount -lt 3) {
-    Say "  [失败] 容器里看不到项目文件（读到 $probeCount 个条目）" Red
-    Say "  两种挂载写法都试过了。可能原因：" Yellow
+if (-not $probe.Ok) {
+    Say "  [失败] 两种挂载写法都看不到 /src/build-linux.sh" Red
+    Say "  docker 的原始输出（最后 8 行）：" Yellow
+    @($probe.Raw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 8) |
+        ForEach-Object { Say "      $_" DarkGray }
+    Say "  可能原因：" Yellow
     Say "    · 项目所在磁盘没有共享给 Docker Desktop（Settings → Resources → File sharing）" Yellow
+    Say "    · Docker Desktop 的 WSL 集成没启用（Settings → Resources → WSL Integration）" Yellow
     Say "    · 路径含中文/空格导致挂载异常 → 复制到纯英文路径再跑：" Gray
     Say "        robocopy `"$Proj`" C:\build\scrcpy-gui-zh /E" Gray
     Say "        cd C:\build\scrcpy-gui-zh" Gray
     Say "        .\build-windows-docker.ps1" Gray
     throw "挂载自检未通过"
 }
-Say "  [OK] 容器里能看到 /src（$probeCount 个条目，挂载方式：$MountStyle）"
+Say "  [OK] 容器里能看到 /src/build-linux.sh（$($probe.Count) 个条目，挂载方式：$MountStyle）"
 
 # ---------------------------------------------------------------------------
 # 逐个构建

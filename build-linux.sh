@@ -237,6 +237,20 @@ build_scrcpy_from_source() {
     rm -f "$tarball"
 
     info "配置并编译（几分钟）…"
+    # Rocky/Alma 8 自带的 meson 只有 0.49，够不上 scrcpy 要求的 ≥ 0.60；
+    # 发行版源里也没有更新的，所以用 pip 往构建虚拟环境里装一份并加进 PATH
+    MESON_HAVE="$(version_of meson)"
+    if [ -z "$MESON_HAVE" ] || ! ver_ge "$MESON_HAVE" "$MIN_MESON"; then
+        warn "系统 meson 版本 ${MESON_HAVE:-未安装} 低于 $MIN_MESON，用 pip 装一份到构建环境"
+        if [ -x "${VPY:-}" ]; then
+            "$VPY" -m pip install --quiet --upgrade meson ninja \
+                || warn "pip 安装 meson/ninja 失败，继续用系统的试试"
+            export PATH="$(dirname "$VPY"):$PATH"
+            info "meson 现在是：$(version_of meson)"
+        else
+            warn "找不到构建虚拟环境（VPY 未设置），无法用 pip 补装 meson"
+        fi
+    fi
     rm -rf "$src/build"
     if ! ( cd "$src" && meson setup build --buildtype=release \
             --prefix="$VENDOR_SCRCPY" -Dprebuilt_server="$VENDOR_SERVER" ); then
