@@ -250,6 +250,8 @@ if ($dnsRaw -match '198\.18\.') {
     Say "    · 永久：Docker Desktop → Settings → Docker Engine 里加一行，然后 Apply & Restart" Gray
     Say '        "dns": ["223.5.5.5", "119.29.29.29"]' Gray
     Say "    · 临时：跑本脚本时加 -Dns 223.5.5.5（只影响本次构建）" Gray
+    Say "  另外：这种网络下 pip 下 wheel 也常超时，建议同时加"
+    Say "      -PipMirror http://mirrors.aliyun.com/pypi/simple/" Gray
 }
 elseif ($dnsRaw -match 'NO_GETENT') {
     Say "  （容器里没有 getent，跳过 DNS 检查）" DarkGray

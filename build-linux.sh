@@ -256,7 +256,7 @@ build_scrcpy_from_source() {
     if [ -z "$MESON_HAVE" ] || ! ver_ge "$MESON_HAVE" "$MIN_MESON"; then
         warn "系统 meson 版本 ${MESON_HAVE:-未安装} 低于 $MIN_MESON，用 pip 装一份到构建环境"
         if [ -x "${VPY:-}" ]; then
-            "$VPY" -m pip install --quiet --upgrade meson ninja \
+            "$VPY" -m pip install --timeout 90 --retries 10 --quiet --upgrade meson ninja \
                 || warn "pip 安装 meson/ninja 失败，继续用系统的试试"
             export PATH="$(dirname "$VPY"):$PATH"
             info "meson 现在是：$(version_of meson)"
@@ -477,7 +477,7 @@ if [ ! -x "$BUILD_ROOT/venv/bin/python" ]; then
     fi
 fi
 VPY="$BUILD_ROOT/venv/bin/python"
-"$VPY" -m pip install --quiet --upgrade pip wheel >/dev/null 2>&1 \
+"$VPY" -m pip install --timeout 90 --retries 10 --quiet --upgrade pip wheel >/dev/null 2>&1 \
     || warn "升级 pip / wheel 失败，继续（多半不影响）"
 
 PYI_VER="$("$VPY" -m PyInstaller --version 2>/dev/null || true)"
@@ -485,11 +485,11 @@ if [ -z "$PYI_VER" ] || ! ver_ge "$PYI_VER" "$MIN_PYINSTALLER"; then
     info "安装/升级 PyInstaller（当前 ${PYI_VER:-未安装}，要求 ≥ $MIN_PYINSTALLER）…"
     # 不吞输出：pip 的报错一定要看得见（之前用 --quiet + 2>/dev/null，
     # 失败时只留下一句「版本未知」，完全无从排查）
-    if ! "$VPY" -m pip install --upgrade pyinstaller; then
+    if ! "$VPY" -m pip install --timeout 90 --retries 10 --upgrade pyinstaller; then
         PIP_FALLBACK="${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}"
         warn "默认 PyPI 源安装失败（国内常见：pypi.org 被代理的 fake-IP 卡住）"
         warn "改用国内镜像重试：$PIP_FALLBACK"
-        "$VPY" -m pip install --upgrade \
+        "$VPY" -m pip install --timeout 90 --retries 10 --upgrade \
             -i "$PIP_FALLBACK" \
             --trusted-host "$(printf '%s' "$PIP_FALLBACK" | sed -e 's|^https\?://||' -e 's|/.*$||')" \
             pyinstaller \
@@ -509,8 +509,8 @@ chk_ok "PyInstaller" "$PYI_VER（要求 ≥ $MIN_PYINSTALLER）"
 # 二维码渲染库：装不上也能跑，程序会退化成剪贴板提示
 if ! "$VPY" -c 'import segno' >/dev/null 2>&1; then
     info "安装二维码库 segno…"
-    "$VPY" -m pip install --quiet segno \
-        || "$VPY" -m pip install --quiet \
+    "$VPY" -m pip install --timeout 90 --retries 10 --quiet segno \
+        || "$VPY" -m pip install --timeout 90 --retries 10 --quiet \
                -i "${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}" \
                --trusted-host "$(printf '%s' "${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}" | sed -e 's|^https\?://||' -e 's|/.*$||')" \
                segno \
