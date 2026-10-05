@@ -494,6 +494,11 @@ fetch_platform_tools() {
         return 1
     fi
     chmod +x "$dest/adb"
-    info "adb 已就位：$dest/adb"
+    if ! adb_mdns_supported "$dest/adb"; then
+        warn "下载到的最新 platform-tools 仍然不支持 mdns（异常情况）"
+        warn "  版本：$(adb_version_text "$dest/adb")"
+        return 1
+    fi
+    info "adb 已就位：$dest/adb（版本 $(adb_version_text "$dest/adb")，支持无线配对）"
     return 0
 }

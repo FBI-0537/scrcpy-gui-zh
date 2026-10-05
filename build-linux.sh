@@ -70,6 +70,7 @@ ASSUME_YES=0
 AUTO_INSTALL=1
 AUTO_SCRCPY=0
 AUTO_ADB=1
+ALLOW_OLD_ADB=0
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -80,6 +81,7 @@ while [ "$#" -gt 0 ]; do
         --no-install)  AUTO_INSTALL=0; shift ;;
         --auto-scrcpy) AUTO_SCRCPY=1; shift ;;
         --no-auto-adb) AUTO_ADB=0; shift ;;
+        --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
         --appimage)
             shift
             info "改用 build-appimage.sh 生成 AppImage…"
@@ -535,13 +537,24 @@ elif [ "$AUTO_ADB" -eq 1 ]; then
     fi
 fi
 if [ "$ADB_MDNS" -eq 1 ]; then
-    info "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，支持 mdns）"
+    info "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，支持无线配对）"
 else
-    warn "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，不支持 mdns）"
-    warn "  · 产物里的「二维码配对 / 自动发现设备 / 自动发现配对端口」将不可用"
-    warn "  · 解决：去掉 --no-auto-adb 让脚本自动下载，或手动解压 platform-tools 到："
-    warn "      $VENDOR_PT"
-    warn "  · 或下载：https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    warn "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，不支持无线配对）"
+    if [ "$ALLOW_OLD_ADB" -eq 1 ]; then
+        warn "已指定 --allow-old-adb，继续构建 —— 产物里的方式二/方式三将不可用"
+    else
+        die "构建中止：无线配对（方式二配对码 / 方式三二维码）需要 platform-tools ≥ 30，
+     而当前 adb 是 $(adb_version_text "$ADB_BIN")。
+
+     三种处理方式，任选其一：
+       1) 联网后重跑（脚本会自动下载官方 platform-tools 到 vendor/platform-tools/）
+            ./build-linux.sh --clean
+       2) 手动下载解压：
+            wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+            python3 -m zipfile -e platform-tools-latest-linux.zip vendor/
+       3) 明确不需要无线配对，只想打 USB 那部分：
+            ./build-linux.sh --allow-old-adb --clean"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -652,6 +665,11 @@ BASE_OUT="$(basename "$OUT")"
 info "产物：$OUT"
 info "大小：$(du -h "$OUT" | cut -f1)"
 info "架构：$(file -b "$OUT" | cut -c1-70)"
+if [ "$ADB_MDNS" -eq 1 ]; then
+    info "无线配对：可用（内嵌 adb $(adb_version_text "$ADB_BIN")，platform-tools ≥ 30）"
+else
+    warn "无线配对：不可用（内嵌 adb 过旧，仅 USB 与 USB 转无线可用）"
+fi
 
 cat <<TIP
 

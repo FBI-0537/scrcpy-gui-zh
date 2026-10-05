@@ -293,14 +293,17 @@ PLATFORM_TOOLS_URL = ("https://dl.google.com/android/repository/"
 
 
 def adb_version_text():
-    """adb 版本描述，例如 '35.0.2-12345678'。"""
+    """adb 版本描述，例如 '35.0.2-12345678'（会去掉 'Version ' 前缀）。"""
     if not ADB:
         return "未知"
     _rc, out = run([ADB, "--version"])
     for line in out.splitlines():
         line = line.strip()
         if line.lower().startswith("version"):
-            return line.split(":", 1)[-1].strip() if ":" in line else line
+            text = line.split(":", 1)[-1].strip() if ":" in line else line
+            if text.lower().startswith("version"):
+                text = text[len("version"):].strip()
+            return text
     first = out.strip().splitlines()
     return first[0].strip() if first else "未知"
 
@@ -1796,6 +1799,21 @@ def selftest():
         else:
             print("  [失败] scrcpy 跑不起来（多半是依赖库没打进去）")
             ok = False
+
+    if ADB:
+        pt = adb_platform_tools_version()
+        pt_text = str(pt) if pt is not None else "未知"
+        if adb_wireless_ok():
+            print("  adb 版本     : %s（platform-tools %s，支持无线配对）"
+                  % (adb_version_text(), pt_text))
+        else:
+            print("  adb 版本     : %s（platform-tools %s）"
+                  % (adb_version_text(), pt_text))
+            print("  [警告] 该 adb 不支持无线配对（方式二/方式三），需要 platform-tools ≥ 30")
+            print("         可用：USB 直连、方式一（USB 转无线）")
+    else:
+        print("  [失败] 没有可用的 adb")
+        ok = False
 
     print("  结果         : %s" % ("通过" if ok else "失败"))
     return 0 if ok else 1

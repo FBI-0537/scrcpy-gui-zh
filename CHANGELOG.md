@@ -42,6 +42,12 @@
   `PKEXEC_UID` 判断真实用户；处理 `plugdev` 组不存在的情况；重载 udev 并做现状检查
 
 ### 构建
+- **保证产物里的无线配对可用**：构建脚本发现 adb 过旧时会自动下载官方
+  platform-tools 到 `vendor/platform-tools/` 并**校验下载结果确实支持 mdns**；
+  下载失败或校验不过则**中止构建**（而不是像以前那样只警告后照常出包）。
+  新增 `--allow-old-adb` 明确接受旧 adb；`--no-auto-adb` 关闭自动下载。
+  构建结束会汇总「无线配对：可用/不可用」；`--selftest` 也会报 adb 版本与
+  platform-tools 主版本号
 - **自动处理过旧的 adb**：`adb mdns` 与 `adb pair` 都需要 platform-tools ≥ 30，
   而 Ubuntu 22.04 源里的 adb 是 28.0.2，导致**方式二配对码、方式三二维码、
   自动发现全部失效**（报 `unknown command`）。构建脚本现在会检测，必要时自动下载

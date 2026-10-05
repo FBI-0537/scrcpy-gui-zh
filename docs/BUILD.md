@@ -108,17 +108,31 @@
 `adb mdns`（二维码配对、自动发现设备/端口依赖它）需要 **platform-tools ≥ 30**（2020）。
 老发行版源里的 adb 常常还是 28.x，此时 `adb mdns` 会回 `unknown command mdns`。
 
-构建脚本会自动处理：
+构建脚本会自动处理，**并保证产物里的无线配对可用**：
 
 | 情况 | 行为 |
 |---|---|
 | 系统 adb 支持 mdns | 直接用 |
 | 项目 `vendor/platform-tools/adb` 支持 | 优先用它 |
-| 都不支持 | **自动下载官方 platform-tools 到 `vendor/platform-tools/`**（约 5MB，无需 root） |
-| 加了 `--no-auto-adb` | 只警告，产物里的 mdns 相关功能不可用 |
+| 都不支持 | **自动下载官方 platform-tools 到 `vendor/platform-tools/`**（约 5MB，无需 root，用 `python3 -m zipfile` 解压），下载后**再校验一次**确实支持 mdns |
+| 下载失败 / 校验不过 | **构建中止**，给出三种处理方式（联网重跑 / 手动解压 / `--allow-old-adb`） |
+| `--no-auto-adb` | 不自动下载；若最终 adb 仍不支持，同样中止 |
+| `--allow-old-adb` | 明确接受旧 adb，继续构建（产物里方式二/方式三不可用） |
 
 下载地址：`https://dl.google.com/android/repository/platform-tools-latest-linux.zip`
-（用 `python3 -m zipfile` 解压，不依赖 `unzip`）。构建结束时会打印 adb 版本与是否支持 mdns。
+
+构建结束时会打印：
+
+```
+[信息] adb   ：/…/vendor/platform-tools/adb（版本 35.0.2-13480178，支持无线配对）
+[信息] 无线配对：可用（内嵌 adb 35.0.2-13480178，platform-tools ≥ 30）
+```
+
+产物自检（`--selftest`）也会报 adb 版本与 platform-tools 主版本号：
+```
+  adb 版本     : 35.0.2-13480178（platform-tools 35，支持无线配对）
+```
+若过旧则打印警告，并说明此时仍可用 USB 直连与方式一（USB 转无线）。
 
 ## 3. 方式一：直接运行源码
 

@@ -273,6 +273,7 @@ ASSUME_YES=0       # 是否跳过安装询问
 MAKE_README=1      # 是否在 dist 里生成 FUSE说明.txt
 AUTO_SCRCPY=0      # 系统 scrcpy 不可用时是否自动源码编译
 AUTO_ADB=1         # 系统 adb 过旧（不支持 mdns）时是否自动取官方 platform-tools
+ALLOW_OLD_ADB=0    # 是否允许用旧 adb 继续构建（默认不允许，保证无线配对可用）
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"   # 自动编译时用哪个版本（空=最新）
 
 while [ "$#" -gt 0 ]; do
@@ -284,6 +285,7 @@ while [ "$#" -gt 0 ]; do
         --no-readme)  MAKE_README=0; shift ;;
         --auto-scrcpy) AUTO_SCRCPY=1; shift ;;
         --no-auto-adb) AUTO_ADB=0; shift ;;
+        --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
         --scrcpy-version)
             if [ "$#" -lt 2 ]; then
                 die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
@@ -623,13 +625,24 @@ elif [ "$AUTO_ADB" -eq 1 ]; then
     fi
 fi
 if [ "$ADB_MDNS" -eq 1 ]; then
-    info "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，支持 mdns）"
+    info "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，支持无线配对）"
 else
-    warn "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，不支持 mdns）"
-    warn "  · 产物里的「二维码配对 / 自动发现设备 / 自动发现配对端口」将不可用"
-    warn "  · 解决：去掉 --no-auto-adb 让脚本自动下载，或手动解压 platform-tools 到："
-    warn "      $VENDOR_PT"
-    warn "  · 或下载：https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    warn "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，不支持无线配对）"
+    if [ "$ALLOW_OLD_ADB" -eq 1 ]; then
+        warn "已指定 --allow-old-adb，继续构建 —— 产物里的方式二/方式三将不可用"
+    else
+        die "构建中止：无线配对（方式二配对码 / 方式三二维码）需要 platform-tools ≥ 30，
+     而当前 adb 是 $(adb_version_text "$ADB_BIN")。
+
+     三种处理方式，任选其一：
+       1) 联网后重跑（脚本会自动下载官方 platform-tools 到 vendor/platform-tools/）
+            ./build-appimage.sh --clean
+       2) 手动下载解压：
+            wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+            python3 -m zipfile -e platform-tools-latest-linux.zip vendor/
+       3) 明确不需要无线配对，只想打 USB 那部分：
+            ./build-appimage.sh --allow-old-adb --clean"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -924,6 +937,11 @@ fi
 info "产物：$OUT"
 info "大小：$(du -h "$OUT" | cut -f1)"
 info "架构：$(file -b "$OUT" | cut -c1-70)"
+if [ "$ADB_MDNS" -eq 1 ]; then
+    info "无线配对：可用（内嵌 adb $(adb_version_text "$ADB_BIN")，platform-tools ≥ 30）"
+else
+    warn "无线配对：不可用（内嵌 adb 过旧，仅 USB 与 USB 转无线可用）"
+fi
 if [ "$HOST_FUSE_OK" -eq 1 ]; then
     info "宿主 FUSE：可用（本机可直接运行该 AppImage）"
 else
