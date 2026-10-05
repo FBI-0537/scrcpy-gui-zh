@@ -59,6 +59,7 @@ param(
     [string]$AptMirror = '',
     [string]$Dns = '',
     [string]$PipMirror = '',
+    [string]$ExtraEnv = '',
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
@@ -389,6 +390,13 @@ foreach ($t in $Targets) {
         try { $pipHost = ([uri]$PipMirror).Host } catch { $pipHost = '' }
         $runArgs += @('-e', "PIP_INDEX_URL=$PipMirror")
         if ($pipHost) { $runArgs += @('-e', "PIP_TRUSTED_HOST=$pipHost") }
+    }
+    # 通用环境变量透传：-ExtraEnv "K=V;K2=V2"
+    # 例：-ExtraEnv "PLATFORM_TOOLS_URL=https://某个镜像/platform-tools-latest-linux.zip"
+    if ($ExtraEnv) {
+        foreach ($pair in ($ExtraEnv -split ';')) {
+            if ($pair.Trim()) { $runArgs += @('-e', $pair.Trim()) }
+        }
     }
     $runArgs += @('-w', '/src', $img, 'bash', '-c', $inner)
 

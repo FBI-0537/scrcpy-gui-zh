@@ -881,12 +881,14 @@ adb_version_text() {
 # 下载官方 platform-tools 到指定目录（只为拿到新版 adb；约 5MB，不需要 root）
 fetch_platform_tools() {
     local dest="$1"
-    local url="https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    # 默认走 Google 官方；网络受限时可以用 PLATFORM_TOOLS_URL 指向镜像
+    # （例如镜像站上的同路径 zip）。下载后仍会**实际运行 adb --version** 校验。
+    local url="${PLATFORM_TOOLS_URL:-https://dl.google.com/android/repository/platform-tools-latest-linux.zip}"
     local parent zip
     parent="$(dirname "$dest")"
     zip="$parent/platform-tools-latest-linux.zip"
     mkdir -p "$parent"
-    info "下载官方 platform-tools（约 5MB）…"
+    info "下载 platform-tools（约 5MB）：$url"
     if ! curl -fL --retry 2 --max-time 600 -o "$zip" "$url"; then
         warn "platform-tools 下载失败：$url"
         rm -f "$zip"
