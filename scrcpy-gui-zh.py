@@ -308,15 +308,35 @@ def adb_version_text():
     return first[0].strip() if first else "未知"
 
 
-def adb_mdns_supported():
-    """当前 adb 是否支持 mdns 子命令。"""
+def adb_mdns_probe():
+    """探测 mdns 子命令，返回 (是否可用, 原始输出)。
+
+    用它而不是只看退出码，是因为「命令不存在」和「命令存在但后端起不来」
+    是两种完全不同的故障，处理方式也不同。
+    """
     if not ADB:
-        return False
+        return False, "没有 adb"
     rc, out = run([ADB, "mdns", "check"])
     text = out.lower()
     if "unknown command" in text or "unknown subcommand" in text:
-        return False
-    return rc == 0 or "mdns" in text
+        return False, out
+    if rc == 0:
+        return True, out
+    if "mdns" in text and "unknown" not in text and "error" not in text:
+        return True, out
+    return False, out
+
+
+def adb_mdns_supported():
+    """当前 adb 是否支持 mdns 子命令。"""
+    return adb_mdns_probe()[0]
+
+
+def adb_server_reset():
+    """重启 adb 服务端：解决「客户端已升级、旧服务端还占着 5037」这类问题。"""
+    run([ADB, "kill-server"], timeout=20)
+    rc, out = run([ADB, "start-server"], timeout=30)
+    return rc == 0, out
 
 
 def adb_platform_tools_version():
@@ -361,6 +381,40 @@ def adb_too_old_hint(feature="无线调试"):
         "  2) 现在就想无线 —— 用「方式一：USB 转无线」：\n"
         "         插着数据线 → 点「启用无线端口」→ 拔线 → 点「连接」"
         % (adb_version_text(), feature, PLATFORM_TOOLS_URL))
+
+
+def adb_mdns_trouble_hint(raw=""):
+    """adb 版本够新、但 mdns 探测失败的指引（纯文本）。"""
+    ver = adb_version_text()
+    pt = adb_platform_tools_version()
+    lines = [
+        "adb 版本没问题（%s，platform-tools %s），但 adb mdns 探测失败。"
+        % (ver, pt if pt is not None else "未知"),
+        "所以这不是「adb 太旧」，而是 adb 服务端（server）状态不对。",
+        "",
+    ]
+    if raw.strip():
+        lines += ["adb 的原始输出：", "    " + raw.strip().replace("\n", "\n    "), ""]
+    lines += [
+        "程序已自动尝试 adb kill-server + start-server 后重试，仍未成功。",
+        "请在终端里手工确认：",
+        "",
+        "    ADB=%s" % ADB,
+        '    "$ADB" kill-server',
+        '    "$ADB" mdns check      # 看它到底报什么',
+        '    "$ADB" devices',
+        "",
+        "常见原因：",
+        "  · 系统里另一个 adb（例如 /usr/bin/adb 28.0.2）的服务端还占着 5037 端口",
+        "      → 先 \"$ADB\" kill-server；必要时 pkill -f 'adb -L'",
+        "  · mDNS 后端没起来",
+        "      → 试 ADB_MDNS_OPENSCREEN=1 \"$ADB\" kill-server 再重试",
+        "  · 环境变量把服务端指到了别处",
+        "      → 检查 ADB_SERVER_SOCKET / ANDROID_ADB_SERVER_PORT",
+        "",
+        "二维码配对还要求手机与电脑在同一局域网（校园网/企业网的客户端隔离会失败）。",
+    ]
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
@@ -1345,18 +1399,41 @@ class ScrcpyGui:
             return
         self.log("=" * 46)
         self.log("mDNS 诊断")
-        if not adb_mdns_supported():
-            self.log("！ 根因找到了：当前 adb 不支持 mdns 子命令（版本 %s）" % adb_version_text())
-            self.log("！ 这不是网络/防火墙问题，是 adb 版本太旧，换网络也没用。")
-            for line in adb_too_old_hint("二维码配对与自动发现").splitlines():
+        diag_ver = adb_platform_tools_version()
+        self.log("adb 版本：%s（platform-tools %s）"
+                 % (adb_version_text(), diag_ver if diag_ver is not None else "未知"))
+
+        # 情况一：adb 真的太旧
+        if diag_ver is not None and diag_ver < 30:
+            hint = adb_too_old_hint("二维码配对与自动发现")
+            self.log("！ 根因：adb 太旧（platform-tools %s < 30），与网络/防火墙无关。" % diag_ver)
+            for line in hint.splitlines():
                 self.log("！ " + line if line.strip() else "！")
             self.log("=" * 46)
-            messagebox.showwarning(APP_TITLE, adb_too_old_hint("二维码配对与自动发现"))
+            messagebox.showwarning(APP_TITLE, hint)
             return
-        _rc, out = run([ADB, "mdns", "check"], timeout=20)
+
+        # 情况二：版本够新，但 mdns 探测失败 —— 多半是旧服务端占着 5037
+        ok, mout = adb_mdns_probe()
         self.log("$ adb mdns check")
-        self.log(out.strip() or "(无输出)")
-        _rc2, out2 = run([ADB, "mdns", "services"], timeout=25)
+        self.log(mout.strip() or "(无输出)")
+        if not ok:
+            self.log("！ adb 版本够新却探测失败，先重启 adb 服务端再试…")
+            adb_server_reset()
+            ok2, mout2 = adb_mdns_probe()
+            self.log("$ adb kill-server && adb start-server")
+            self.log("$ adb mdns check")
+            self.log(mout2.strip() or "(无输出)")
+            if not ok2:
+                hint = adb_mdns_trouble_hint(mout2 or mout)
+                for line in hint.splitlines():
+                    self.log("！ " + line if line.strip() else "！")
+                self.log("=" * 46)
+                messagebox.showwarning(APP_TITLE, hint)
+                return
+            self.log("→ 重启服务端后 mdns 可用了：根因是旧的 adb 服务端占用 5037")
+
+        _rc, out2 = run([ADB, "mdns", "services"], timeout=25)
         self.log("$ adb mdns services")
         self.log(out2.strip() or "(无输出)")
         entries = parse_mdns_services(out2)
@@ -1571,6 +1648,18 @@ class ScrcpyGui:
         rc, out = run(cmd, timeout=60)
         self.log("$ adb pair %s:%s ******" % (ip, pport))
         self.log(out.strip() or "(无输出)")
+
+        # 失败且像是服务端状态问题（旧的 adb 服务端还占着 5037）时，重启服务端重试一次
+        if "Successfully paired" not in out:
+            low = out.lower()
+            if "unknown" in low or "host service" in low or "server" in low:
+                self.log("！ 看起来是 adb 服务端状态不对（客户端/服务端版本不一致）")
+                self.log("！ 正在重启 adb 服务端后重试一次…")
+                adb_server_reset()
+                rc, out = run(cmd, timeout=60)
+                self.log("$ adb pair %s:%s ******  （重启服务端后重试）" % (ip, pport))
+                self.log(out.strip() or "(无输出)")
+
         if rc == 0 and "Successfully paired" in out:
             self.var_ip.set(ip)
             self.log("配对成功。现在用「连接」按钮（端口填无线调试页显示的连接端口）连接。")
@@ -1607,14 +1696,42 @@ class ScrcpyGui:
         return False
 
     def _require_mdns(self):
-        """自动发现/二维码配对前确认 mdns 子命令可用。"""
-        if not self._require_wireless_adb("二维码配对与自动发现"):
+        """自动发现/二维码配对前确认 mdns 子命令可用。
+
+        要区分两种完全不同的故障：
+          · adb 太旧（platform-tools < 30）→ 换 adb
+          · adb 够新但 mdns 探测失败     → 服务端状态问题，先自动重启再试
+        """
+        if not self._need_adb():
             return False
-        if adb_mdns_supported():
+
+        ver = adb_platform_tools_version()
+        if ver is not None and ver < 30:
+            hint = adb_too_old_hint("二维码配对与自动发现")
+            self.log("！ 当前 adb 太旧（platform-tools %s），不支持无线配对" % ver)
+            for line in hint.splitlines():
+                self.log("！ " + line if line.strip() else "！")
+            messagebox.showwarning(APP_TITLE, hint)
+            return False
+
+        ok, raw = adb_mdns_probe()
+        if ok:
             return True
-        hint = adb_too_old_hint("二维码配对与自动发现")
-        self.log("！ 当前 adb 不支持 mdns 子命令（版本 %s）" % adb_version_text())
-        self.log("！ 二维码配对与自动发现会不可用；方式一（USB 转无线）不受影响。")
+
+        # 版本够新却探测失败：多半是旧的 adb 服务端还占着 5037，先自动重启一次
+        self.log("！ adb 版本 %s（platform-tools %s）没问题，但 adb mdns 探测失败："
+                 % (adb_version_text(), ver if ver is not None else "未知"))
+        self.log("！   %s" % (raw.strip() or "(无输出)"))
+        self.log("！ 正在重启 adb 服务端后重试（解决旧服务端占用 5037 的问题）…")
+        adb_server_reset()
+        ok, raw2 = adb_mdns_probe()
+        if ok:
+            self.log("！ 重启服务端后 mdns 已可用 —— 原因就是旧 adb 服务端在捣乱 ✅")
+            return True
+
+        hint = adb_mdns_trouble_hint(raw2 or raw)
+        for line in hint.splitlines():
+            self.log("！ " + line if line.strip() else "！")
         messagebox.showwarning(APP_TITLE, hint)
         return False
 
