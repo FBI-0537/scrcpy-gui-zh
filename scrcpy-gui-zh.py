@@ -73,6 +73,7 @@ except NameError:                      # 极端情况：交互式执行没有 __
 
 VENDOR_DIRS = (
     os.path.join(_BASE_DIR, "vendor", "scrcpy"),
+    os.path.join(_BASE_DIR, "vendor", "platform-tools"),
     os.path.join(_BASE_DIR, "vendor"),
 )
 
@@ -278,6 +279,58 @@ def usb_permission_denied():
         return False
     _rc, out = run([ADB, "devices"])
     return "no permissions" in out
+
+
+# ------------------------------------------------------------------
+# adb 版本 / mdns 子命令支持
+# ------------------------------------------------------------------
+# `adb mdns` 是 platform-tools 30（2020）才加的。老发行版源里的 adb（如
+# Ubuntu 22.04 的 28.0.2）根本没有这个子命令，会回 "unknown command mdns"。
+# 二维码配对与自动发现都依赖它，所以必须先把这件事查清楚，别让用户傻等。
+
+PLATFORM_TOOLS_URL = ("https://dl.google.com/android/repository/"
+                      "platform-tools-latest-linux.zip")
+
+
+def adb_version_text():
+    """adb 版本描述，例如 '35.0.2-12345678'。"""
+    if not ADB:
+        return "未知"
+    _rc, out = run([ADB, "--version"])
+    for line in out.splitlines():
+        line = line.strip()
+        if line.lower().startswith("version"):
+            return line.split(":", 1)[-1].strip() if ":" in line else line
+    first = out.strip().splitlines()
+    return first[0].strip() if first else "未知"
+
+
+def adb_mdns_supported():
+    """当前 adb 是否支持 mdns 子命令。"""
+    if not ADB:
+        return False
+    rc, out = run([ADB, "mdns", "check"])
+    text = out.lower()
+    if "unknown command" in text or "unknown subcommand" in text:
+        return False
+    return rc == 0 or "mdns" in text
+
+
+def adb_too_old_hint():
+    """adb 过旧时的解决指引（纯文本）。"""
+    return (
+        "当前 adb 版本：%s\n"
+        "（adb mdns 需要 platform-tools ≥ 30，2020 年才有）\n\n"
+        "这会导致：二维码配对、自动发现设备、自动发现配对端口 全部不可用。\n"
+        "「方式二：配对码」不受影响，不依赖 mdns，现在就能用。\n\n"
+        "想恢复 mdns 功能 —— 下载官方 platform-tools 放进项目 vendor/ 目录，\n"
+        "程序会自动优先使用它（重新构建产物即可打进包里）：\n\n"
+        "    cd 项目目录\n"
+        "    wget %s\n"
+        "    unzip platform-tools-latest-linux.zip -d vendor/\n"
+        "    ./build-linux.sh --clean      # 重新打包，之后产物自带新 adb\n\n"
+        "系统 adb 若也能升级（snap 或发行版源），同样可以。"
+        % (adb_version_text(), PLATFORM_TOOLS_URL))
 
 
 # ------------------------------------------------------------------
@@ -1213,6 +1266,8 @@ class ScrcpyGui:
         """用 adb mdns 自动发现同一局域网内已开启无线调试的设备。"""
         if not self._need_adb():
             return
+        if not self._require_mdns():
+            return
         _rc, out = run([ADB, "mdns", "services"], timeout=25)
         self.log("$ adb mdns services")
         self.log(out.strip() or "(无输出)")
@@ -1236,6 +1291,8 @@ class ScrcpyGui:
         """从 adb mdns 里找出手机当前打开的配对服务地址（省得手抄）。"""
         if not self._need_adb():
             return
+        if not self._require_mdns():
+            return
         _rc, out = run([ADB, "mdns", "services"], timeout=25)
         self.log("$ adb mdns services")
         self.log(out.strip() or "(无输出)")
@@ -1258,6 +1315,14 @@ class ScrcpyGui:
             return
         self.log("=" * 46)
         self.log("mDNS 诊断")
+        if not adb_mdns_supported():
+            self.log("！ 根因找到了：当前 adb 不支持 mdns 子命令（版本 %s）" % adb_version_text())
+            self.log("！ 这不是网络/防火墙问题，是 adb 版本太旧，换网络也没用。")
+            for line in adb_too_old_hint().splitlines():
+                self.log("！ " + line if line.strip() else "！")
+            self.log("=" * 46)
+            messagebox.showwarning(APP_TITLE, adb_too_old_hint())
+            return
         _rc, out = run([ADB, "mdns", "check"], timeout=20)
         self.log("$ adb mdns check")
         self.log(out.strip() or "(无输出)")
@@ -1320,6 +1385,10 @@ class ScrcpyGui:
     def wifi_qr_pair(self):
         """生成二维码 → 等手机扫码 → mDNS 发现 → adb pair → 自动连接。"""
         if not self._need_adb():
+            return
+        if not self._require_mdns():
+            self.notebook.select(self.tab_wifi)
+            self.log("提示：改用「方式二：配对码配对」—— 它不依赖 mdns，现在就能用。")
             return
 
         service = "scrcpygui-" + secrets.token_hex(6)
@@ -1484,8 +1553,22 @@ class ScrcpyGui:
 
     # ---------- 关闭 ----------
 
-    # ---------- AppImage / FUSE ----------
+    # ---------- adb mdns 能力检查 ----------
 
+    def _require_mdns(self):
+        """二维码配对 / 自动发现前先确认 adb 支持 mdns，避免傻等 120 秒。"""
+        if not self._need_adb():
+            return False
+        if adb_mdns_supported():
+            return True
+        hint = adb_too_old_hint()
+        self.log("！ 当前 adb 不支持 mdns 子命令（版本 %s）" % adb_version_text())
+        for line in hint.splitlines():
+            self.log("！ " + line if line.strip() else "！")
+        messagebox.showwarning(APP_TITLE, hint)
+        return False
+
+    # ---------- AppImage / FUSE ----------
     def _maybe_warn_fuse(self):
         """在 AppImage 里运行且系统缺 libfuse.so.2 时给出安装指引。"""
         if self._fuse_warned:

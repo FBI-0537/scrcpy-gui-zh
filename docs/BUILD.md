@@ -103,6 +103,23 @@
 
 ---
 
+### 2.3 adb 版本要求（影响二维码配对）
+
+`adb mdns`（二维码配对、自动发现设备/端口依赖它）需要 **platform-tools ≥ 30**（2020）。
+老发行版源里的 adb 常常还是 28.x，此时 `adb mdns` 会回 `unknown command mdns`。
+
+构建脚本会自动处理：
+
+| 情况 | 行为 |
+|---|---|
+| 系统 adb 支持 mdns | 直接用 |
+| 项目 `vendor/platform-tools/adb` 支持 | 优先用它 |
+| 都不支持 | **自动下载官方 platform-tools 到 `vendor/platform-tools/`**（约 5MB，无需 root） |
+| 加了 `--no-auto-adb` | 只警告，产物里的 mdns 相关功能不可用 |
+
+下载地址：`https://dl.google.com/android/repository/platform-tools-latest-linux.zip`
+（用 `python3 -m zipfile` 解压，不依赖 `unzip`）。构建结束时会打印 adb 版本与是否支持 mdns。
+
 ## 3. 方式一：直接运行源码
 
 ```bash

@@ -147,6 +147,51 @@ apt 版，`which scrcpy` 永远指向旧的。**必须卸掉 apt 版。**
 
 ## 4. 无线连接问题
 
+### 4.0 二维码/自动发现全都不工作：`adb: unknown command mdns`
+
+```
+$ adb mdns services
+adb: unknown command mdns
+```
+
+**这是 adb 版本太旧，不是网络问题。** `adb mdns` 子命令是 platform-tools **30**
+（2020 年）才加入的：
+
+| adb 来源 | 版本 | 有 `adb mdns` 吗 |
+|---|---|---|
+| Ubuntu 22.04 源里的 `adb` | 28.0.2 | ❌ |
+| Ubuntu 24.04 源里的 `adb` | 视版本而定（仍可能偏旧） | 看情况 |
+| 官方 platform-tools（Google） | 35+ | ✅ |
+
+受影响：**二维码配对**、自动发现设备、自动发现配对端口。
+**不受影响**：USB 直连、方式二「配对码配对」、`adb connect` 直连。
+
+**解法一：让构建脚本自动处理（默认已开启）**
+
+```bash
+./build-linux.sh                  # 检测到 adb 不支持 mdns → 自动下载 platform-tools 到 vendor/
+./build-linux.sh --no-auto-adb    # 想自己管就关掉
+```
+
+构建脚本会把新 adb 打进产物，之后二维码配对就能用了。
+
+**解法二：手动放一份新 adb**
+
+```bash
+cd 项目目录
+wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+python3 -m zipfile -e platform-tools-latest-linux.zip vendor/     # 或 unzip -d vendor/
+# 得到 vendor/platform-tools/adb，程序会自动优先使用
+./build-linux.sh --clean          # 重新打包
+```
+
+**解法三：绕开 mdns**
+
+用「方式二：配对码配对」，手抄 IP + 端口 + 6 位码，完全不依赖 mdns，现在就能用。
+
+> 程序已能识别这种情况：点「mDNS 诊断」或「生成二维码并配对」时会**直接告诉你
+> adb 太旧**并给出上面的步骤，不会再傻等 120 秒。
+
 ### 4.1 卡在「正在配对设备」（二维码方式）
 
 手机接受二维码后开了配对服务在等电脑连过来，说明**电脑侧 mDNS 没发现到手机**。

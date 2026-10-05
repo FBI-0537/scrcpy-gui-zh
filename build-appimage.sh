@@ -272,6 +272,7 @@ AUTO_INSTALL=1     # 缺少系统依赖时是否允许自动安装
 ASSUME_YES=0       # 是否跳过安装询问
 MAKE_README=1      # 是否在 dist 里生成 FUSE说明.txt
 AUTO_SCRCPY=0      # 系统 scrcpy 不可用时是否自动源码编译
+AUTO_ADB=1         # 系统 adb 过旧（不支持 mdns）时是否自动取官方 platform-tools
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"   # 自动编译时用哪个版本（空=最新）
 
 while [ "$#" -gt 0 ]; do
@@ -282,6 +283,7 @@ while [ "$#" -gt 0 ]; do
         --no-install) AUTO_INSTALL=0; shift ;;
         --no-readme)  MAKE_README=0; shift ;;
         --auto-scrcpy) AUTO_SCRCPY=1; shift ;;
+        --no-auto-adb) AUTO_ADB=0; shift ;;
         --scrcpy-version)
             if [ "$#" -lt 2 ]; then
                 die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
@@ -601,8 +603,34 @@ if [ -z "$SERVER_SRC" ] || [ ! -f "$SERVER_SRC" ]; then
 fi
 
 info "scrcpy：$SCRCPY_BIN（版本 ${SCRCPY_VER:-未知}）"
-info "adb   ：$ADB_BIN"
 info "server：$SERVER_SRC（$(stat -c%s "$SERVER_SRC") 字节）"
+
+# ---- adb 版本检查：adb mdns 需要 platform-tools >= 30 ----
+VENDOR_PT="$SCRIPT_DIR/vendor/platform-tools"
+ADB_MDNS=0
+if adb_mdns_supported "$ADB_BIN"; then
+    ADB_MDNS=1
+elif [ -x "$VENDOR_PT/adb" ] && adb_mdns_supported "$VENDOR_PT/adb"; then
+    info "改用项目内较新的 adb：$VENDOR_PT/adb"
+    ADB_BIN="$VENDOR_PT/adb"
+    ADB_MDNS=1
+elif [ "$AUTO_ADB" -eq 1 ]; then
+    warn "系统 adb 不支持 mdns 子命令（版本 $(adb_version_text "$ADB_BIN")）"
+    info "自动获取官方 platform-tools 到项目 vendor/platform-tools/（约 5MB，无需 root）"
+    if fetch_platform_tools "$VENDOR_PT"; then
+        ADB_BIN="$VENDOR_PT/adb"
+        ADB_MDNS=1
+    fi
+fi
+if [ "$ADB_MDNS" -eq 1 ]; then
+    info "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，支持 mdns）"
+else
+    warn "adb   ：$ADB_BIN（版本 $(adb_version_text "$ADB_BIN")，不支持 mdns）"
+    warn "  · 产物里的「二维码配对 / 自动发现设备 / 自动发现配对端口」将不可用"
+    warn "  · 解决：去掉 --no-auto-adb 让脚本自动下载，或手动解压 platform-tools 到："
+    warn "      $VENDOR_PT"
+    warn "  · 或下载：https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+fi
 
 # ---------------------------------------------------------------------------
 # 3. 准备目录

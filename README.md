@@ -236,7 +236,10 @@ scrcpy-gui-zh/
 
 - **Android 14 及以上**需要 scrcpy ≥ 2.2，Android 16 建议 3.3+；发行版自带的旧版会报
   `SurfaceControl.createDisplay NoSuchMethodException`
-- **二维码配对与 mDNS 自动发现**依赖 mDNS 组播，校园网 / 企业网的客户端隔离会让它失效
+- **二维码配对与 mDNS 自动发现**依赖 mDNS 组播，校园网 / 企业网的客户端隔离会让它失效；
+  另外还需要 **adb（platform-tools）≥ 30** —— 老发行版源里的 adb 是 28.x，会报
+  `unknown command mdns`。构建脚本会自动取官方 platform-tools 放进 `vendor/platform-tools/`，
+  此路不通时请用「方式二：配对码配对」（不依赖 mdns）
 - **蓝牙**不支持（ADB 协议不存在蓝牙传输层）
 - **AppImage 不能跨架构**：x86_64 与 arm64 要各打一次
 - **AppImage 不打包** glibc、显卡驱动、X11/Wayland——这些必须用宿主机的

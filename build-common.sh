@@ -432,3 +432,68 @@ host_fuse_present() {
 host_fuse_pkg() {
     pkg_hint fuse
 }
+
+# ---------------------------------------------------------------------------
+# adb 版本 / mdns 支持
+# ---------------------------------------------------------------------------
+# `adb mdns` 是 platform-tools 30（2020）才加的子命令。老发行版源里的 adb
+# （如 Ubuntu 22.04 的 28.0.2）根本没有它，会回 "unknown command mdns"。
+# 二维码配对、自动发现设备/端口全都依赖它，所以构建时必须查一次。
+
+adb_mdns_supported() {
+    local bin="$1" out
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+        return 1
+    fi
+    out="$("$bin" mdns check 2>&1 || true)"
+    case "$out" in
+        *"unknown command"*|*"unknown subcommand"*) return 1 ;;
+    esac
+    return 0
+}
+
+adb_version_text() {
+    local bin="$1" out ver
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+        printf '未知'
+        return
+    fi
+    out="$("$bin" --version 2>/dev/null || true)"
+    ver="$(printf '%s\n' "$out" | sed -n 's/^Version //p' | head -1)"
+    if [ -n "$ver" ]; then
+        printf '%s' "$ver"
+    else
+        printf '%s' "$(printf '%s\n' "$out" | head -1)"
+    fi
+}
+
+# 下载官方 platform-tools 到指定目录（只为拿到新版 adb；约 5MB，不需要 root）
+fetch_platform_tools() {
+    local dest="$1"
+    local url="https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    local parent zip
+    parent="$(dirname "$dest")"
+    zip="$parent/platform-tools-latest-linux.zip"
+    mkdir -p "$parent"
+    info "下载官方 platform-tools（约 5MB）…"
+    if ! curl -fL --retry 2 --max-time 600 -o "$zip" "$url"; then
+        warn "platform-tools 下载失败：$url"
+        rm -f "$zip"
+        return 1
+    fi
+    rm -rf "$dest"
+    # 用 python3 解压，免去对 unzip 的依赖（python3 是构建必需项）
+    if ! python3 -m zipfile -e "$zip" "$parent" >/dev/null 2>&1; then
+        warn "解压 platform-tools 失败"
+        rm -f "$zip"
+        return 1
+    fi
+    rm -f "$zip"
+    if [ ! -x "$dest/adb" ]; then
+        warn "解压后没找到 $dest/adb"
+        return 1
+    fi
+    chmod +x "$dest/adb"
+    info "adb 已就位：$dest/adb"
+    return 0
+}

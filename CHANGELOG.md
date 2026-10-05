@@ -42,6 +42,14 @@
   `PKEXEC_UID` 判断真实用户；处理 `plugdev` 组不存在的情况；重载 udev 并做现状检查
 
 ### 构建
+- **自动处理过旧的 adb**：`adb mdns` 需要 platform-tools ≥ 30，而 Ubuntu 22.04
+  源里的 adb 是 28.0.2，导致二维码配对/自动发现全部失效（报
+  `adb: unknown command mdns`）。构建脚本现在会检测，必要时自动下载官方
+  platform-tools 到 `vendor/platform-tools/` 并打进产物（`--no-auto-adb` 可关闭）；
+  构建结束会打印 adb 版本与 mdns 支持情况
+- 图形界面：二维码配对/自动发现/mDNS 诊断前先检查 adb 是否支持 mdns，
+  不支持时**立即给出明确原因与解决步骤**（不再是傻等 120 秒 + 误导性的网络排查）；
+  新增查找路径 `vendor/platform-tools/adb`
 - **支持多种 Linux 发行版**：新增 `build-common.sh` 发行版适配层，自动识别
   Debian 系（apt/dpkg）、RHEL 系（dnf/yum/rpm）、Arch 系（pacman）、
   openSUSE 系（zypper/rpm）、Alpine（apk）三/五个家族，并把「逻辑依赖键」映射成
