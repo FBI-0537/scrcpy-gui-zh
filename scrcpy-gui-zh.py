@@ -273,6 +273,43 @@ def find_udev_script():
     return None
 
 
+def is_network_serial(serial):
+    """仅凭 serial 形式推断是不是网络设备（取不到 adb 信息时的兜底）。
+
+    · IP:端口                        → 192.168.1.5:5555
+    · mDNS 服务名（无线调试扫码后常见）→ adb-XXXXXX-YYYYYY._adb-tls-connect._tcp
+    这两种都能用 adb disconnect 断开；USB 设备的 serial 通常是硬件序列号。
+    """
+    if not serial:
+        return False
+    if ":" in serial:
+        return True
+    if ".tcp" in serial and serial.startswith("adb-"):
+        return True
+    if "_adb-tls-connect" in serial or "_adb-tls-pairing" in serial:
+        return True
+    return False
+
+
+def adb_device_transport(serial):
+    """判断某设备是 USB 还是网络连接。
+
+    优先看 `adb devices -l` 里的 `usb:` 字段 —— **只有 USB 连接的设备才有
+    `usb:1-3` 这样的字段**，网络设备没有，这比看 serial 里有没有冒号可靠。
+    取不到就退回按 serial 形式推断。
+    """
+    if ADB and serial:
+        _rc, out = run([ADB, "devices", "-l"])
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == serial:
+                for token in parts[2:]:
+                    if token.startswith("usb:"):
+                        return "usb"
+                return "tcp"
+    return "tcp" if is_network_serial(serial) else "usb"
+
+
 def usb_permission_denied():
     """adb devices 输出里是否出现 no permissions。"""
     if not ADB:
@@ -936,12 +973,130 @@ class ScrollableFrame(ttk.Frame):
         self.canvas.yview_moveto(0.0)
 
 
+class DevicePicker(ttk.Frame):
+    """长得像下拉框的设备选择器。
+
+    ttk.Combobox 的下拉列表是原生 Listbox，**没法在其中一行里放按钮或图标**，
+    所以这里自己画一个：收起时是一个按钮，展开后每行一台设备，
+    行尾在「确实能删除」的设备上带一个 × 图标（USB 设备没有，因为 ADB 删不掉）。
+    """
+
+    def __init__(self, parent, on_delete=None):
+        super().__init__(parent)
+        self.on_delete = on_delete
+        self.items = []          # [(serial, 显示文本, 是否可删除)]
+        self.popup = None
+        self.serial = ""
+        self.button = ttk.Button(self, text="（没有设备）", command=self.toggle)
+        self.button.pack(fill="x", expand=True)
+
+    # ---- 数据 ----
+
+    def set_items(self, items, selected=""):
+        self.items = items
+        if selected not in [s for s, _t, _d in items]:
+            selected = items[0][0] if items else ""
+        self.serial = selected
+        self._refresh_text()
+
+    def _refresh_text(self):
+        text = "（没有设备）"
+        for serial, label, _deletable in self.items:
+            if serial == self.serial:
+                text = label
+                break
+        self.button.configure(text=text + "   ▼")
+
+    def current(self):
+        return self.serial
+
+    # ---- 展开 / 收起 ----
+
+    def toggle(self):
+        if self.popup is not None:
+            self.close()
+        else:
+            self.open()
+
+    def close(self):
+        if self.popup is not None:
+            try:
+                self.popup.grab_release()
+                self.popup.destroy()
+            except tk.TclError:
+                pass
+            self.popup = None
+
+    def open(self):
+        if self.popup is not None or not self.items:
+            return
+        win = tk.Toplevel(self)
+        self.popup = win
+        try:
+            win.overrideredirect(True)
+            try:
+                win.attributes("-topmost", True)
+            except tk.TclError:
+                pass
+            box = ttk.Frame(win, relief="solid", borderwidth=1)
+            box.pack(fill="both", expand=True)
+            for serial, label, deletable in self.items:
+                row = ttk.Frame(box)
+                row.pack(fill="x")
+                pick = ttk.Label(row, text=label, anchor="w", padding=(8, 4))
+                pick.pack(side="left", fill="x", expand=True)
+                pick.bind("<Button-1>", lambda _e, s=serial: self._pick(s))
+                row.bind("<Button-1>", lambda _e, s=serial: self._pick(s))
+                if deletable:
+                    ttk.Button(row, text="×", width=3,
+                               command=lambda s=serial, l=label: self._delete(s, l)
+                               ).pack(side="right", padx=(0, 4), pady=2)
+            self.button.update_idletasks()
+            box.update_idletasks()
+            x = self.button.winfo_rootx()
+            y = self.button.winfo_rooty() + self.button.winfo_height()
+            width = max(self.button.winfo_width(), 380)
+            height = box.winfo_reqheight()
+            win.geometry("%dx%d+%d+%d" % (width, height, x, y))
+            try:
+                win.grab_set()
+            except tk.TclError:
+                pass
+            win.bind("<Button-1>", self._maybe_close, add="+")
+            win.bind("<Escape>", lambda _e: self.close())
+        except tk.TclError:
+            self.close()
+
+    def _maybe_close(self, event):
+        """点到下拉框外面就收起来（grab 下外部点击也会送到这里）。"""
+        if self.popup is None:
+            return
+        try:
+            x = self.popup.winfo_rootx()
+            y = self.popup.winfo_rooty()
+            w = self.popup.winfo_width()
+            h = self.popup.winfo_height()
+        except tk.TclError:
+            return
+        if not (x <= event.x_root <= x + w and y <= event.y_root <= y + h):
+            self.close()
+
+    def _pick(self, serial):
+        self.serial = serial
+        self._refresh_text()
+        self.close()
+
+    def _delete(self, serial, label):
+        self.close()
+        if self.on_delete:
+            self.on_delete(serial, label)
+
+
 class ScrcpyGui:
     def __init__(self, root):
         self.root = root
         self.proc = None
         self.log_queue = queue.Queue()
-        self.device_map = {}          # 下拉框显示文本 -> serial
         self.hidden_serials = set()   # 被「删除设备」在列表里隐藏的 serial
         self._mirroring = False
         self._usb_fix_offered = False  # 是否已弹过「USB 权限」提示
@@ -1031,10 +1186,9 @@ class ScrcpyGui:
         row = ttk.Frame(dev)
         row.pack(fill="x")
         ttk.Label(row, text="选择手机：").pack(side="left")
-        self.cmb_device = ttk.Combobox(row, state="readonly", width=46)
-        self.cmb_device.pack(side="left", padx=6, fill="x", expand=True)
+        self.dev_picker = DevicePicker(row, on_delete=self.remove_device)
+        self.dev_picker.pack(side="left", padx=6, fill="x", expand=True)
         ttk.Button(row, text="刷新设备", command=self.refresh_devices).pack(side="left")
-        ttk.Button(row, text="删除设备", command=self.remove_device).pack(side="left", padx=(6, 0))
         ttk.Button(row, text="显示全部", command=self.show_all_devices).pack(side="left", padx=(6, 0))
         if not IS_WIN:
             ttk.Button(row, text="安装 USB 权限",
@@ -1447,31 +1601,30 @@ class ScrcpyGui:
     def refresh_devices(self):
         if not ADB:
             return
+        self.dev_picker.close()
         devices = adb_devices()
-        self.device_map.clear()
-        shown = []
+        items = []
         hidden_now = 0
         for serial, state, model in devices:
             if serial in self.hidden_serials:
                 hidden_now += 1
                 continue
-            label = "%s  [%s]%s" % (model or serial, STATE_ZH.get(state, state),
-                                    "" if model else "")
-            self.device_map[label] = serial
-            shown.append(label)
+            transit = adb_device_transport(serial)
+            kind = "无线" if transit == "tcp" else "USB"
+            label = "%s  [%s]  (%s)" % (model or serial, STATE_ZH.get(state, state), kind)
+            # 只有网络设备能真的删掉，USB 设备不给删除图标
+            items.append((serial, label, transit == "tcp"))
 
-        self.cmb_device.configure(values=shown)
+        self.dev_picker.set_items(items, self.dev_picker.current())
+        shown = len(items)
         tail_hidden = ("（另有 %d 台已被隐藏，点「显示全部」恢复）" % hidden_now
                        if hidden_now else "")
         if shown:
-            if self.cmb_device.get() not in shown:
-                self.cmb_device.current(0)
             self.lbl_devhint.configure(
-                text="检测到 %d 台设备。若状态不是「已授权」，请在手机上确认授权弹窗。%s"
-                     % (len(shown), tail_hidden))
-            self._set_status("已检测到 %d 台设备" % len(shown))
+                text="检测到 %d 台设备。点下拉框里的 ✕ 可断开并删除无线设备。%s"
+                     % (shown, tail_hidden))
+            self._set_status("已检测到 %d 台设备" % shown)
         else:
-            self.cmb_device.set("")
             tail = ("③ 已配置 udev 权限规则。" if not IS_WIN
                     else "③ 已装好厂商 USB 驱动（设备管理器里没有感叹号）。")
             if hidden_now:
@@ -1485,65 +1638,47 @@ class ScrcpyGui:
             self._set_status("未检测到设备")
 
     def _auto_refresh(self):
-        if not self._mirroring:
+        # 下拉框展开时不要重建，否则用户正在选设备它就被刷没了
+        if not self._mirroring and self.dev_picker.popup is None:
             self.refresh_devices()
         self.root.after(4000, self._auto_refresh)
 
     def current_serial(self):
-        return self.device_map.get(self.cmb_device.get())
+        return self.dev_picker.current()
 
     # ---------- 删除 / 恢复设备 ----------
 
-    def remove_device(self):
-        """把选中的设备从列表里删掉。
+    def remove_device(self, serial, label=""):
+        """删除设备（由下拉框每行行尾的 ✕ 触发）。
 
-        · 网络设备（IP:端口）：adb disconnect 真正断开，之后不再出现
-        · USB 设备：ADB 命令删不掉（它由数据线连接），只能拔线，
-          所以这里提供「仅在列表中隐藏」
+        · 网络设备（IP:端口 或 mDNS 服务名）：adb disconnect 真正断开
+        · USB 设备：ADB 删不掉（由数据线连接），下拉框里也不显示 ✕
         """
-        if not ADB:
+        if not ADB or not serial:
             return
-        label = self.cmb_device.get()
-        serial = self.current_serial()
-        if not label:
-            messagebox.showinfo(APP_TITLE, "列表里没有设备可选。\n先点「刷新设备」。")
-            return
-        if not serial:
-            # 下拉框里有内容但没匹配到（例如内容被手动改过）
-            messagebox.showinfo(APP_TITLE,
-                                "没能识别选中的设备，请重新点「刷新设备」后再试。")
-            return
-
-        if ":" in serial:      # 网络设备：可以是真删
-            if not messagebox.askyesno(
-                    APP_TITLE,
-                    "断开并删除这个网络设备？\n\n%s\n\n会执行：adb disconnect %s\n"
-                    "（这只断开 ADB，不影响手机本身）" % (label, serial)):
-                return
-            rc, out = run([ADB, "disconnect", serial])
-            self.log("$ adb disconnect %s" % serial)
-            self.log(out.strip() or "(无输出)")
-            if rc != 0:
-                self.log("！ adb disconnect 返回非零，仍会把它从列表里去掉")
-            self.hidden_serials.add(serial)
-            self.refresh_devices()
-            self._set_status("已删除 %s" % serial)
-            if self.cmb_device.get() == "":
-                self.lbl_devhint.configure(
-                    text="已删除 %s。重连时在「无线连接」页再点一次「连接」。" % serial)
-            return
-
-        # USB 设备
-        if messagebox.askyesno(
+        transit = adb_device_transport(serial)
+        if transit != "tcp":
+            messagebox.showinfo(
                 APP_TITLE,
-                "这是 USB 连接的设备：\n\n%s\n\n"
-                "ADB 无法用命令删掉 USB 设备 —— 它由数据线连着，只能拔线，"
-                "或者关掉手机的「USB 调试」。\n\n"
-                "要只在列表里隐藏它吗？（重新插拔后仍会出现）" % serial):
-            self.hidden_serials.add(serial)
-            self.refresh_devices()
-            self.log("已在列表中隐藏 %s（USB 设备请拔线移除）" % serial)
-            self._set_status("已隐藏 %s" % serial)
+                "这是 USB 连接的设备，ADB 命令删不掉：\n\n%s\n\n"
+                "它由数据线连着，只能拔线，或者关掉手机的「USB 调试」。" % serial)
+            return
+
+        if not messagebox.askyesno(
+                APP_TITLE,
+                "断开并删除这个无线设备？\n\n%s\n\n设备标识：%s\n"
+                "会执行：adb disconnect %s\n"
+                "（只断开 ADB 连接，不影响手机本身）」" % (label or serial, serial, serial)):
+            return
+        rc, out = run([ADB, "disconnect", serial])
+        self.log("$ adb disconnect %s" % serial)
+        self.log(out.strip() or "(无输出)")
+        if rc != 0:
+            self.log("！ adb disconnect 返回非零，仍会把它从列表里去掉")
+            self.log("！ 若它反复出现，可点「显示全部」恢复后重试，或考虑 adb kill-server 重置")
+        self.hidden_serials.add(serial)
+        self.refresh_devices()
+        self._set_status("已删除 %s" % serial)
 
     def show_all_devices(self):
         """把之前隐藏的设备恢复显示。"""
