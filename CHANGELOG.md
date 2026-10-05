@@ -1,4 +1,18 @@
 ### 修复
+- **架构检测不能用 `uname -m`**：QEMU 用户态模拟下它返回**宿主内核**的架构 ——
+  实测在 `--platform linux/arm64` 的容器里报 `armv7l`，导致构建脚本直接
+  「不支持的架构」退出。现在优先用 `dpkg --print-architecture`（镜像构建时定死，
+  最可靠），uname 只作兜底；并补上 **armv7l（32 位 ARM）** 的支持
+  （此前架构分支里根本没有它，即使检测对了也会退出）。
+  运行器里的容器架构校验也一并改用 dpkg，并在架构不符时明确报出
+  「QEMU 模拟没生效」与 binfmt 修复命令。
+- **新增 `-AptMirror`**：国内直连 deb.debian.org 很慢，或被代理软件的
+  fake-IP 模式搞出 404（实测 apt 报了 15 个 404、速度 37.5 kB/s，
+  且所有请求指向 198.18.0.4 —— 那是代理 fake-IP 的保留地址段）。
+  传入后容器内的 apt 源会换成该镜像：
+      .\build-windows-docker.cmd -SkipEmulated -AptMirror https://mirrors.tuna.tsinghua.edu.cn
+
+### 修复
 - **区分「镜像仓库连不上」和「真的挂载失败」**：用户实测中文路径挂载正常
   （容器里 `ls /src` 返回 17 个条目），失败实际是
   `Get https://registry-1.docker.io/v2/: context deadline exceeded`

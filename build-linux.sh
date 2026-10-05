@@ -56,6 +56,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 # shellcheck source=build-common.sh
 . "$SCRIPT_DIR/build-common.sh"
 detect_distro
+apply_apt_mirror        # 设了 APT_MIRROR 时把容器内 apt 源换成国内镜像
 
 GUI_PY="$SCRIPT_DIR/scrcpy-gui-zh.py"
 UDEV_SRC="$SCRIPT_DIR/install-udev.sh"
@@ -292,10 +293,12 @@ if [ "$CLEAN" -eq 1 ]; then
 fi
 mkdir -p "$BUILD_ROOT" "$DIST_DIR"
 
-case "$(uname -m)" in
-    x86_64|amd64)   ARCH_TAG="x86_64";  MULTIARCH="x86_64-linux-gnu" ;;
-    aarch64|arm64)  ARCH_TAG="aarch64"; MULTIARCH="aarch64-linux-gnu" ;;
-    *) die "不支持的架构：$(uname -m)（只支持 x86_64 与 aarch64）" ;;
+# 用 host_arch（优先 dpkg）而不是 uname —— QEMU 模拟下 uname 会报宿主架构
+case "$(host_arch)" in
+    x86_64)  ARCH_TAG="x86_64";  MULTIARCH="x86_64-linux-gnu" ;;
+    aarch64) ARCH_TAG="aarch64"; MULTIARCH="aarch64-linux-gnu" ;;
+    armv7l)  ARCH_TAG="armv7l";  MULTIARCH="arm-linux-gnueabihf" ;;
+    *) die "不支持的架构：$(uname -m) / dpkg 报告 $(dpkg --print-architecture 2>/dev/null || echo '?' )（支持 x86_64 / aarch64 / armv7l）" ;;
 esac
 info "发行版  ：$DISTRO_NAME（$(distro_family_zh)）"
 info "目标架构：$ARCH_TAG    libc：$(libc_flavor) $(host_glibc)"

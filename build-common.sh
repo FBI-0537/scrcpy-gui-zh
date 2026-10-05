@@ -485,21 +485,75 @@ check_tool_version() {
 # 从 Debian / Ubuntu 归档里取现成的 .deb 解包，再**实际运行一次**验证。
 # 跑不起来（glibc 或依赖库版本不匹配）就返回失败，交给源码编译兜底。
 
-deb_arch() {
-    case "$(uname -m)" in
-        x86_64|amd64)  printf 'amd64' ;;
-        aarch64|arm64) printf 'arm64' ;;
-        armv7l|armv6l|armhf) printf 'armhf' ;;
-        i386|i686)     printf 'i386' ;;
-        *)             printf '' ;;
+# 本机架构（规范成 x86_64 / aarch64 / armv7l / i386 / unknown）
+#
+# 注意：**QEMU 用户态模拟下 `uname -m` 会返回宿主内核的架构** ——
+# 例如在 `--platform linux/arm64` 的容器里可能报 x86_64 甚至 armv7l。
+# 所以优先用 dpkg 记录的架构（镜像构建时就定死了，最可靠），uname 只作兜底。
+host_arch() {
+    local a=""
+    if command -v dpkg >/dev/null 2>&1; then
+        a="$(dpkg --print-architecture 2>/dev/null || true)"
+    fi
+    case "$a" in
+        amd64) printf 'x86_64';  return ;;
+        arm64) printf 'aarch64'; return ;;
+        armhf) printf 'armv7l';  return ;;
+        armel) printf 'armv6l';  return ;;
+        i386)  printf 'i386';    return ;;
     esac
+    case "$(uname -m)" in
+        x86_64|amd64)        printf 'x86_64' ;;
+        aarch64|arm64)       printf 'aarch64' ;;
+        armv7l|armv6l|armhf) printf 'armv7l' ;;
+        i386|i686)           printf 'i386' ;;
+        *)                   printf 'unknown' ;;
+    esac
+}
+
+deb_arch() {
+    case "$(host_arch)" in
+        x86_64)  printf 'amd64' ;;
+        aarch64) printf 'arm64' ;;
+        armv7l)  printf 'armhf' ;;
+        i386)    printf 'i386' ;;
+        *)       printf '' ;;
+    esac
+}
+
+# 可选：把容器里的 apt 源换成国内镜像
+#   APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+# 用途：国内直连 deb.debian.org 很慢，或者被代理的 fake-IP 模式搞出 404
+apply_apt_mirror() {
+    local mirror="${APT_MIRROR:-}"
+    if [ -z "$mirror" ]; then
+        return 0
+    fi
+    case "$DISTRO_FAMILY" in
+        debian) ;;
+        *) return 0 ;;
+    esac
+    info "把容器内的 apt 源换成镜像：$mirror"
+    local exprs=(
+        -e "s|https\\?://deb.debian.org/debian-security|$mirror/debian-security|g"
+        -e "s|https\\?://deb.debian.org/debian|$mirror/debian|g"
+        -e "s|https\\?://security.ubuntu.com/ubuntu|$mirror/ubuntu|g"
+        -e "s|https\\?://archive.ubuntu.com/ubuntu|$mirror/ubuntu|g"
+    )
+    local f
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources \
+             /etc/apt/sources.list.d/*.list; do
+        if [ -f "$f" ]; then
+            sed -i "${exprs[@]}" "$f" 2>/dev/null || true
+        fi
+    done
 }
 
 # Google 官方的 platform-tools 只有 x86_64 版（Linux），其它架构得另想办法
 platform_tools_available_for_arch() {
-    case "$(uname -m)" in
-        x86_64|amd64) return 0 ;;
-        *)            return 1 ;;
+    case "$(host_arch)" in
+        x86_64) return 0 ;;
+        *)      return 1 ;;
     esac
 }
 

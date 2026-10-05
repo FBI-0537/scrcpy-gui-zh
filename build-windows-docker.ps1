@@ -56,6 +56,7 @@ param(
     [ValidateSet('', 'debian', 'rhel', 'arch', 'suse')]
     [string]$Family = '',
     [string]$Registry = '',
+    [string]$AptMirror = '',
     [switch]$AllDistros,
     [switch]$SkipEmulated,
     [switch]$NoVerify
@@ -297,8 +298,11 @@ foreach ($t in $Targets) {
     }
     $img = Resolve-Image $t.Image
 
-    # 再确认容器能起来（ARM 需要 QEMU，起不来就别浪费一小时）
-    $carch = (& docker run --rm --platform $t.Plat $img uname -m 2>&1 | Out-String).Trim()
+    # 再确认容器能起来，并且架构真的是我们要的那个
+    # 注意：**不能用 uname -m** —— QEMU 用户态模拟下它常常返回宿主内核的架构
+    # （实测在 --platform linux/arm64 的容器里报 armv7l 甚至 x86_64）。
+    # dpkg 记录的架构（dpkg --print-architecture）是镜像构建时定死的，最可靠。
+    $carch = (& docker run --rm --platform $t.Plat $img sh -c 'dpkg --print-architecture 2>/dev/null || uname -m' 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $carch) {
         Say "  [失败] 容器起不来：$carch" Red
         Say "  ARM 架构需要 QEMU 模拟。Docker Desktop 默认自带；" Yellow
@@ -307,7 +311,17 @@ foreach ($t in $Targets) {
         $Failed += "$($t.Image) $($t.Plat)（容器起不来）"
         continue
     }
-    Say "  容器架构：$carch"
+    $expectArch = switch ($t.Arch) { 'x86_64' { 'amd64' } 'arm64' { 'arm64' } 'armhf' { 'armhf' } default { '' } }
+    if ($expectArch -and $carch -ne $expectArch) {
+        Say "  [失败] 容器报告架构是 $carch，期望 $expectArch —— QEMU 模拟没生效" Red
+        Say "  这条 ARM 目标跳过（继续下一个）。修复办法：" Yellow
+        Say "      docker run --privileged --rm tonistiigi/binfmt --install all" Gray
+        Say "    然后在 Docker Desktop 里确认 Settings → General 勾了" Gray
+        Say "    Use containerd ... / 以及 Resources 里可用虚拟化。重跑本脚本。" Gray
+        $Failed += "$($t.Image) $($t.Plat)（架构不对：$carch ≠ $expectArch）"
+        continue
+    }
+    Say "  容器架构：$carch（期望 $expectArch）"
 
     # 非 x86_64 上 Google 不提供 platform-tools：脚本会从 Debian/Ubuntu 归档取本架构
     # 的 adb（debian:12 能拿到 34.0.5 → 无线配对可用；debian:11 拿不到）。
@@ -328,6 +342,18 @@ foreach ($t in $Targets) {
     }
     else {
         $runArgs += @('-v', "${Proj}:/src")
+    }
+    # 国内直连 deb.debian.org 很慢，或被代理的 fake-IP 模式搞出 404 ——
+    # 用 -AptMirror 让容器内的 apt 源换成国内镜像
+    if ($AptMirror) {
+        $runArgs += @('-e', "APT_MIRROR=$AptMirror")
+        # Docker Desktop 配了代理时会往容器里注入 HTTP_PROXY，国内镜像的流量也会
+        # 绕道代理（更慢甚至失败），所以把镜像域名加进 NO_PROXY 排除掉
+        $mirrorHost = ''
+        try { $mirrorHost = ([uri]$AptMirror).Host } catch { $mirrorHost = '' }
+        if (-not $mirrorHost) { $mirrorHost = $AptMirror }
+        $noProxy = "$mirrorHost,localhost,127.0.0.1,::1"
+        $runArgs += @('-e', "NO_PROXY=$noProxy", '-e', "no_proxy=$noProxy")
     }
     $runArgs += @('-w', '/src', $img, 'bash', '-c', $inner)
 
