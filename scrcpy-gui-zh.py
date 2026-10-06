@@ -1099,6 +1099,9 @@ class ScrcpyGui:
         self.log_queue = queue.Queue()
         self.hidden_serials = set()   # 被「删除设备」在列表里隐藏的 serial
         self._mirroring = False
+        # GL 驱动缺失时，自动用软件渲染重试一次（只重试一次，避免死循环）
+        self._force_software_render = False
+        self._software_retry_done = False
         self._usb_fix_offered = False  # 是否已弹过「USB 权限」提示
         self._fuse_warned = False      # 是否已弹过「缺 FUSE」提示
 
@@ -1734,12 +1737,21 @@ class ScrcpyGui:
                 cmd += shlex.split(extra, posix=not IS_WIN)
             except ValueError:
                 cmd += extra.split()
+
+        # OpenGL 驱动缺失时自动追加的软件渲染开关（只在自动重试时置位）
+        if getattr(self, "_force_software_render", False) \
+                and "--render-driver" not in cmd:
+            cmd += ["--render-driver=software"]
         return cmd
 
-    def start_mirror(self):
+    def start_mirror(self, _auto=False):
         if self._mirroring:
             messagebox.showinfo(APP_TITLE, "已经在投屏中。")
             return
+        if not _auto:
+            # 用户手动点击：重置自动重试状态
+            self._force_software_render = False
+            self._software_retry_done = False
         if not SCRCPY:
             messagebox.showerror(APP_TITLE, "没有找到 scrcpy。\n\n请执行：sudo apt install -y scrcpy")
             return
@@ -1806,6 +1818,13 @@ class ScrcpyGui:
             self.log("   如果是在虚拟机里：还要在虚拟机设置中勾选「3D 加速」；")
             self.log("   实在没有 3D 时，可在「额外参数」里填 --render-driver=software 试试。")
             self.log("   注意：这是**宿主系统**缺少显卡驱动，与程序本身无关。")
+            if not self._software_retry_done:
+                self._software_retry_done = True
+                self._force_software_render = True
+                self.log("")
+                self.log("→ 自动改用软件渲染重试一次（--render-driver=software）…")
+                self.log("   （SDL 软件渲染不需要 OpenGL；若仍失败，请按上面装驱动）")
+                self.root.after(500, self.start_mirror)
             return
         # ② 拔线 / 设备掉线
         if "device" in low and ("not found" in low or "disconnected" in low):
