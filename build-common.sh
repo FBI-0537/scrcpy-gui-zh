@@ -105,7 +105,9 @@ distro_family_zh() {
 }
 
 libc_flavor() {
-    if ldd --version 2>&1 | sed -n '1p' | grep -qi musl; then
+    # 注意：ldd 不存在时 `ldd --version` 会返回 127；本函数用在 $( ) 里，
+    # 配上 set -e 就是静默退出，所以这里必须允许失败
+    if { ldd --version 2>&1 || true; } | sed -n '1p' | grep -qi musl; then
         printf 'musl'
     else
         printf 'glibc'
@@ -527,16 +529,41 @@ ver_ge() {
 }
 
 # 取某个工具的版本号（取不到输出空串）
+#
+# ⚠️ 工具**未安装时必须返回 0 而不是 127**。
+# 这是一个极隐蔽的坑：`meson --version` 在 meson 未安装时返回 127，
+# 而调用方是 `thave="$(version_of meson)"` 这样的裸赋值，配上 set -e
+# 会让整个脚本**静默退出** —— 日志里只剩前一行提示，没有任何报错。
+# （CI 上就是这样：打印完「检查编译工具链版本…」立刻 127 退出。）
 version_of() {
     case "$1" in
-        python3)   python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null ;;
-        meson)     meson --version 2>/dev/null | sed -n '1p' ;;
-        ninja)     ninja --version 2>/dev/null | sed -n '1p' ;;
-        cmake)     cmake --version 2>/dev/null | sed -n '1p' | sed 's/[^0-9.]//g' ;;
-        gcc)       gcc -dumpversion 2>/dev/null | sed -n '1p' ;;
-        pkgconfig) pkg-config --version 2>/dev/null | sed -n '1p' ;;
-        *)         printf '' ;;
+        python3)
+            if command -v python3 >/dev/null 2>&1; then
+                python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || true
+            fi ;;
+        meson)
+            if command -v meson >/dev/null 2>&1; then
+                meson --version 2>/dev/null | sed -n '1p' || true
+            fi ;;
+        ninja)
+            if command -v ninja >/dev/null 2>&1; then
+                ninja --version 2>/dev/null | sed -n '1p' || true
+            fi ;;
+        cmake)
+            if command -v cmake >/dev/null 2>&1; then
+                cmake --version 2>/dev/null | sed -n '1p' | sed 's/[^0-9.]//g' || true
+            fi ;;
+        gcc)
+            if command -v gcc >/dev/null 2>&1; then
+                gcc -dumpversion 2>/dev/null | sed -n '1p' || true
+            fi ;;
+        pkgconfig)
+            if command -v pkg-config >/dev/null 2>&1; then
+                pkg-config --version 2>/dev/null | sed -n '1p' || true
+            fi ;;
+        *) printf '' ;;
     esac
+    return 0
 }
 
 # 打印检查结果：[OK] / [需处理] / [缺失]
@@ -838,7 +865,8 @@ KNOWN_GLIBC="2.28:Debian 10
 2.41:Debian 13"
 
 host_glibc() {
-    ldd --version 2>/dev/null | sed -n '1p' | grep -oE '[0-9]+\.[0-9]+' | sed -n '1p'
+    # 同样要防 127：ldd 缺失时这里会静默退出（见 version_of 的注释）
+    { ldd --version 2>/dev/null || true; } | sed -n '1p' | grep -oE '[0-9]+\.[0-9]+' | sed -n '1p' || true
 }
 
 # 打印「这个 glibc 下限的产物能用在哪些系统上」
