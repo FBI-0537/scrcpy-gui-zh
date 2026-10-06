@@ -101,12 +101,32 @@ NO_WINDOW = {"creationflags": 0x08000000} if IS_WIN else {}
 _CHILD_ENV = None
 
 
+# GL 驱动不可用时的兜底开关（由 GL 失败后的自动重试置位）
+_FORCE_SOFTWARE_GL = False
+
+
+def enable_software_gl():
+    """让后续子进程强制走 Mesa 软件渲染。
+
+    虚拟机里常见两种失败：
+      · 缺 DRI 驱动（MESA-LOADER 打不开 vmwgfx/swrast）
+      · 装了驱动但 X 服务器建不出 GL 上下文（GLXCreateContext failed）
+    第二种只加 --render-driver=software 不一定够，同时置这两个环境变量更稳。
+    """
+    global _FORCE_SOFTWARE_GL, _CHILD_ENV
+    _FORCE_SOFTWARE_GL = True
+    _CHILD_ENV = None          # 让 child_env() 重新生成
+
+
 def child_env():
     global _CHILD_ENV
     if _CHILD_ENV is not None:
         return _CHILD_ENV
 
     env = os.environ.copy()
+    if _FORCE_SOFTWARE_GL and not IS_WIN:
+        env["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        env["GALLIUM_DRIVER"] = "llvmpipe"
     extra = []
     if getattr(sys, "frozen", False):
         base = getattr(sys, "_MEIPASS", "")
@@ -1749,9 +1769,12 @@ class ScrcpyGui:
             messagebox.showinfo(APP_TITLE, "已经在投屏中。")
             return
         if not _auto:
-            # 用户手动点击：重置自动重试状态
+            # 用户手动点击：重置自动重试状态与软件渲染开关
+            global _FORCE_SOFTWARE_GL, _CHILD_ENV
             self._force_software_render = False
             self._software_retry_done = False
+            _FORCE_SOFTWARE_GL = False
+            _CHILD_ENV = None
         if not SCRCPY:
             messagebox.showerror(APP_TITLE, "没有找到 scrcpy。\n\n请执行：sudo apt install -y scrcpy")
             return
@@ -1808,8 +1831,16 @@ class ScrcpyGui:
         """把常见的"环境问题"翻译成能直接照做的中文提示。"""
         low = output.lower()
         # ① 缺 OpenGL / Mesa 驱动（虚拟机最常见）
-        if ("mesa-loader" in low or "libgl error" in low
-                or "failed to load driver" in low or "glx" in low and "error" in low):
+        gl_hit = (
+            "mesa-loader" in low
+            or "libgl error" in low
+            or "failed to load driver" in low
+            or "glxcreatecontext" in low
+            or "glx" in low
+            or "x error of failed request" in low
+            or "failed to create" in low and "context" in low
+        )
+        if gl_hit:
             self.log("")
             self.log("！ 画面没能显示：系统缺少 OpenGL 驱动（上面 libGL error 那段）")
             self.log("   在 Debian / Ubuntu 上执行（需要一次管理员密码）：")
@@ -1820,11 +1851,14 @@ class ScrcpyGui:
             self.log("   注意：这是**宿主系统**缺少显卡驱动，与程序本身无关。")
             if not self._software_retry_done:
                 self._software_retry_done = True
-                self._force_software_render = True
+                self._force_software_render = True   # 追加 --render-driver=software
+                enable_software_gl()                 # 同时置 Mesa 软件渲染环境变量
                 self.log("")
-                self.log("→ 自动改用软件渲染重试一次（--render-driver=software）…")
-                self.log("   （SDL 软件渲染不需要 OpenGL；若仍失败，请按上面装驱动）")
-                self.root.after(500, self.start_mirror)
+                self.log("→ 自动改用软件渲染重试一次（两层兜底）…")
+                self.log("   · 环境变量 LIBGL_ALWAYS_SOFTWARE=1 / GALLIUM_DRIVER=llvmpipe")
+                self.log("   · 命令行 --render-driver=software")
+                self.log("   软件渲染不需要 OpenGL，虚拟机/云主机上通常能直接出画面；")
+                self.log("   若仍失败，就按上面提示装驱动或开启虚拟机的 3D 加速。")
             return
         # ② 拔线 / 设备掉线
         if "device" in low and ("not found" in low or "disconnected" in low):
