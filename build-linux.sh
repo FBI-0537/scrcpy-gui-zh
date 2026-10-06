@@ -254,6 +254,23 @@ build_scrcpy_from_source() {
         install_keys_optional sdl3-dev
     fi
     if ! pkg-config --exists sdl3 2>/dev/null; then
+        # 自编 SDL3 之前先确认 X11 开发头文件在 —— armhf / 老发行版上经常
+        # 装不全，结果 SDL3 被编成「没有任何窗口后端」，产物在纯 X11 的机器
+        # （比如掌机）上根本显示不了。这里提前挡住，给出明确原因。
+        if ! pkg-config --exists x11 2>/dev/null && [ ! -f /usr/include/X11/Xlib.h ]; then
+            warn "没有 X11 开发头文件，先补装一次（自编 SDL3 需要）…"
+            install_keys_optional sdl3-build-deps
+            if ! pkg-config --exists x11 2>/dev/null && [ ! -f /usr/include/X11/Xlib.h ]; then
+                die "仍找不到 X11 开发头文件（libx11-dev / libxtst-dev 等）。
+     自编 SDL3 需要它们，否则会编出没有 X11 后端的 SDL3，
+     界面在纯 X11 的桌面上无法显示。请确认软件源里有这些包后重试。"
+            fi
+        fi
+        if ! pkg-config --exists xtst 2>/dev/null && [ ! -f /usr/include/X11/extensions/XTest.h ]; then
+            warn "缺少 XTest 开发头文件（libxtst-dev），SDL3 的 cmake 会直接失败"
+            install_keys_optional sdl3-build-deps || true
+        fi
+
         info "发行版没有 SDL3（老发行版常见），改为自行编译到 vendor/sdl3"
         info "这是整个流程最耗时的一步，请耐心等待…"
         # 编 SDL3 需要 X11 / Wayland / 音频 / GL 的开发库：

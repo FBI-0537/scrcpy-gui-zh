@@ -214,33 +214,58 @@ def check(path):
     return ok
 
 
+# 附带文件不是产物：功能说明 .txt、校验和 SHA256SUMS/.sha256、签名等。
+# 它们跟可执行文件一起发布，但不是 ELF/PE，不能按产物去校验 ——
+# 否则「每个文件都必须是可执行文件」这条会把它们判失败。
+COMPANION_EXT = ('.txt', '.md', '.json', '.sha256', '.sha256sum',
+                 '.sig', '.asc', '.sums', '.log')
+
+
+def is_companion(name):
+    low = name.lower()
+    if name.startswith('.'):
+        return True
+    if low.startswith('sha256sums') or low.startswith('md5sums'):
+        return True
+    return low.endswith(COMPANION_EXT)
+
+
 def collect(targets):
     files = []
+    companions = []
     for t in targets:
         if os.path.isdir(t):
             for root, _dirs, names in os.walk(t):
                 for n in names:
-                    files.append(os.path.join(root, n))
+                    full = os.path.join(root, n)
+                    (companions if is_companion(n) else files).append(full)
         elif os.path.isfile(t):
-            files.append(t)
+            (companions if is_companion(os.path.basename(t)) else files).append(t)
         else:
             print('跳过（不存在）：%s' % t)
     files.sort()
-    return files
+    companions.sort()
+    return files, companions
 
 
 def main(argv):
     if not argv:
         print(__doc__)
         return 2
-    files = collect(argv)
+    files, companions = collect(argv)
+    if companions:
+        print('附带文件（不按产物校验，跳过 %d 个）：' % len(companions))
+        for c in companions:
+            print('    %s' % os.path.basename(c))
+        print()
     if not files:
-        print('没有找到要检查的文件')
+        print('没有找到要检查的产物（只有附带文件）')
         return 2
     results = [check(f) for f in files]
     print('=' * 72)
-    print('汇总：%d 个文件，%d 个通过，%d 个不通过'
-          % (len(results), sum(1 for r in results if r), sum(1 for r in results if not r)))
+    print('汇总：%d 个产物，%d 个通过，%d 个不通过（另有 %d 个附带文件已跳过）'
+          % (len(results), sum(1 for r in results if r),
+             sum(1 for r in results if not r), len(companions)))
     return 0 if all(results) else 1
 
 
