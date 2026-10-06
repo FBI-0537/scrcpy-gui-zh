@@ -1039,7 +1039,70 @@ INCOMPAT_LINES="$(glibc_incompat_lines "$GLIBC_VER")"
 if [ -n "$INCOMPAT_LINES" ]; then
     warn "用不了的系统（会报 GLIBC_$GLIBC_VER not found）："
     printf '%s\n' "$INCOMPAT_LINES"
-    info "想要兼容更老的系统：用容器在 Debian 11 / 12 里构建 —— ./build-docker.sh"
+    info "想要兼容更老的系统：用容器在更老的发行版里构建 —— ./build-docker.sh --list"
+fi
+
+# ---- 在产物旁边生成一份「功能与兼容性说明」，让人下载时就知道这个版本是干啥的 ----
+MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
+{
+    printf '%s\n' "=============================================================="
+    printf '%s\n' " scrcpy 中文 GUI —— 功能与兼容性说明"
+    printf '%s\n' "=============================================================="
+    printf '产物文件  ：%s\n' "$BASE_OUT"
+    printf '构建镜像  ：%s\n' "$DISTRO_NAME"
+    printf '生成时间  ：%s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    printf '\n【运行要求】\n'
+    printf '架构      ：%s（ELF 不能跨架构，必须下对应架构的版本）\n' "$ARCH_TAG"
+    printf 'glibc     ：≥ %s（低于它的系统会报 GLIBC_%s not found）\n' "$GLIBC_VER" "$GLIBC_VER"
+    printf '图形环境  ：X11 或 Wayland（界面用 Tkinter，无桌面环境跑不起来）\n'
+    printf '其它      ：手机需开启 USB 调试并授权；首次用 USB 需装 udev 规则（程序内有按钮）\n'
+    printf '\n【可以运行的系统】\n'
+    glibc_compat_lines "$GLIBC_VER" | sed 's/^/  /'
+    INCOMPAT="$(glibc_incompat_lines "$GLIBC_VER")"
+    if [ -n "$INCOMPAT" ]; then
+        printf '\n【不能运行的系统】（会报 GLIBC_%s not found）\n' "$GLIBC_VER"
+        printf '%s\n' "$INCOMPAT" | sed 's/^/  /'
+    fi
+    printf '\n【内嵌组件】\n'
+    printf 'scrcpy    ：%s\n' "${SCRCPY_VER:-未知}"
+    printf 'adb       ：%s\n' "$(adb_version_text "$ADB_BIN")"
+    printf 'Python/Tk ：3.x + Tcl/Tk（含在单文件里）\n'
+    printf '\n【功能支持】\n'
+    printf 'USB 直连投屏              ：支持\n'
+    printf 'USB 转无线（方式一）      ：支持（先插一次 USB，adb tcpip 5555 后即可拔线）\n'
+    if [ "$ADB_MDNS" -eq 1 ]; then
+        printf '无线配对码（方式二）      ：支持\n'
+        printf '无线二维码（方式三）      ：支持（还需要手机与电脑在同一网段、组播可通）\n'
+    else
+        printf '无线配对码（方式二）      ：不支持 —— 内嵌 adb 低于 platform-tools 30\n'
+        printf '无线二维码（方式三）      ：不支持 —— 同上\n'
+    fi
+    printf '录屏 / 音频转发           ：支持（scrcpy %s 的能力）\n' "${SCRCPY_VER:-?}"
+    if ver_ge "${SCRCPY_VER:-0}" "3.3"; then
+        printf 'Android 16 支持           ：支持（需要 scrcpy ≥ 3.3）\n'
+    elif ver_ge "${SCRCPY_VER:-0}" "2.2"; then
+        printf 'Android 14/15 支持        ：支持；Android 16 建议换 3.3 以上的档位\n'
+    else
+        printf 'Android 14+ 支持          ：不支持（需要 scrcpy ≥ 2.2）\n'
+    fi
+    if [ "$ADB_MDNS" -ne 1 ]; then
+        printf '\n【没有无线配对怎么办】\n'
+        printf '  1) 方式一：先用 USB 连一次 → 程序里点「启用无线端口」→ 拔线，之后纯无线\n'
+        printf '  2) 拷贝密钥：在已配对成功的电脑上执行\n'
+        printf '       scp ~/.android/adbkey ~/.android/adbkey.pub 本机:~/.android/\n'
+        printf '     之后本机 adb connect 手机IP:端口 即可，不需要 adb pair\n'
+    fi
+    printf '\n【使用方法】\n'
+    printf '  chmod +x %s\n' "$BASE_OUT"
+    printf '  ./%s                 # 开界面\n' "$BASE_OUT"
+    printf '  ./%s --selftest      # 只查内嵌组件是否完好\n' "$BASE_OUT"
+    printf '\n【不含（必须由宿主机提供）】\n'
+    printf '  glibc、显卡驱动、X11/Wayland\n'
+    printf '%s\n' "=============================================================="
+} > "$MANIFEST_TXT" 2>/dev/null || warn "生成功能说明失败（不影响产物）"
+
+if [ -f "$MANIFEST_TXT" ]; then
+    info "功能说明：$MANIFEST_TXT"
 fi
 
 cat <<TIP
