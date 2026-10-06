@@ -212,6 +212,12 @@ build_scrcpy_from_source() {
     info "安装编译依赖（已有的会跳过）…"
     install_keys_optional meson ninja pkgconfig cmake gcc gxx make tar \
         ffmpeg-dev libusb-dev
+    # SDL2 也装上：scrcpy 3.1 之前用 SDL2、之后用 SDL3，两个都备着，
+    # 这样版本选择循环才有更大的可用范围（apt 里有 libsdl2-dev，很便宜）
+    install_keys_optional sdl2-dev
+    # 再试试能不能拿到更新的 FFmpeg：scrcpy 3.1+ 需要 libavformat ≥ 60，
+    # 而 Debian 12 主仓只有 59.27。拿到新库 -> 可以编最新版 scrcpy。
+    upgrade_ffmpeg_dev || true
 
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "系统里没有 SDL3，先尝试发行版包…"

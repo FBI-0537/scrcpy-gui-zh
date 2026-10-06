@@ -179,6 +179,14 @@ pkg_name_for_key() {
                 suse)   printf 'libusb-1_0-devel\n' ;;
                 alpine) printf 'libusb-dev\n' ;;
             esac ;;
+        sdl2-dev)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'libsdl2-dev\n' ;;
+                rhel)   printf 'SDL2-devel\n' ;;
+                arch)   printf 'sdl2\n' ;;
+                suse)   printf 'libSDL2-devel\n' ;;
+                alpine) printf 'sdl2-dev\n' ;;
+            esac ;;
         sdl3-dev)
             case "$DISTRO_FAMILY" in
                 debian) printf 'libsdl3-dev\n' ;;
@@ -629,6 +637,45 @@ host_arch() {
         i386|i686)           printf 'i386' ;;
         *)                   printf 'unknown' ;;
     esac
+}
+
+# Debian 上尽量拿到更新的 FFmpeg 开发库。
+#
+# scrcpy 3.1 起要求 libavformat ≥ 60（FFmpeg 6），而 Debian 12 主仓只有
+# FFmpeg 5.1（libavformat 59.27）—— 不解决就只能编到 scrcpy 3.0，
+# 而 3.0 不支持 Android 16。
+# bookworm-backports 里有 FFmpeg 7.x，装上就能编最新版 scrcpy；
+# 这些库会被打进产物，所以**目标机不需要装 FFmpeg**。
+# 拿到就用，拿不到就退回系统自带的（调用方自己判断版本够不够）。
+upgrade_ffmpeg_dev() {
+    case "$DISTRO_FAMILY" in
+        debian) ;;
+        *) return 1 ;;
+    esac
+    local cur codename src
+    cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
+    if [ -n "$cur" ] && ver_ge "$cur" 60.0; then
+        return 0
+    fi
+    codename="$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release 2>/dev/null | sed -n '1p' | tr -d '"')"
+    [ -n "$codename" ] || return 1
+    src="/etc/apt/sources.list.d/${codename}-backports.list"
+    info "尝试从 ${codename}-backports 取更新的 FFmpeg 开发库（当前 libavformat ${cur:-未知}）…"
+    if ! printf 'deb http://deb.debian.org/debian %s-backports main\n' "$codename" > "$src" 2>/dev/null; then
+        return 1
+    fi
+    apt-get update -qq >/dev/null 2>&1 || true
+    if apt-get install -y -t "${codename}-backports" \
+            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev >/dev/null 2>&1; then
+        cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
+        info "  · 现在 libavformat：${cur:-未知}"
+        if [ -n "$cur" ] && ver_ge "$cur" 60.0; then
+            return 0
+        fi
+    fi
+    info "  · backports 里没有更新的 FFmpeg，继续用系统自带的"
+    rm -f "$src" 2>/dev/null || true
+    return 1
 }
 
 deb_arch() {
