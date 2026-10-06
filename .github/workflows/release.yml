@@ -197,7 +197,33 @@ jobs:
 
       - name: 构建单文件 exe
         shell: pwsh
-        run: .\build-windows.cmd -SingleFile -Clean
+        run: |
+          .\build-windows.cmd -SingleFile -Clean 2>&1 | Tee-Object -FilePath build-win.log
+          if ($LASTEXITCODE -ne 0) { throw "build-windows.cmd 失败（退出码 $LASTEXITCODE），日志见总结页" }
+
+      - name: 诊断（失败时把线索写进总结页）
+        if: failure()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $sum = $env:GITHUB_STEP_SUMMARY
+          "## Windows 构建诊断" | Out-File -FilePath $sum -Append -Encoding utf8
+          "### dist 内容" | Out-File -FilePath $sum -Append -Encoding utf8
+          '```' | Out-File -FilePath $sum -Append -Encoding utf8
+          (Get-ChildItem -Path dist -ErrorAction SilentlyContinue |
+             Select-Object Name, Length | Format-Table -AutoSize | Out-String) |
+             Out-File -FilePath $sum -Append -Encoding utf8
+          '```' | Out-File -FilePath $sum -Append -Encoding utf8
+          if (Test-Path build-win.log) {
+            "### build-win.log 末尾 40 行" | Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+            (Get-Content build-win.log -Tail 40 | Out-String) |
+              Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+          } else {
+            "（没有 build-win.log —— 说明失败发生在构建步骤之前）" |
+              Out-File -FilePath $sum -Append -Encoding utf8
+          }
 
       - name: 规范化产物名
         shell: pwsh

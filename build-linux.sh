@@ -288,23 +288,46 @@ build_scrcpy_from_source() {
         tar -xzf "$VENDOR_DIR/sdl3.tar.gz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
             || die "SDL3 解压失败"
         # 第一次按完整依赖配置；失败时打印错误摘要，再用最小依赖重试一次
-        # （关掉 XTEST / ALSA 这些可选后端），避免因为一个可选依赖整轮白跑
-        if ! cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
+        # （关掉 XTEST / ALSA 这些可选后端），避免因为一个可选依赖整轮白跑。
+        #
+        # ⚠️ 整段**不致命**：SDL3 编不出来（老发行版 / armhf 上常见，cmake 的
+        # X11 探测在这种组合下经常失败）时，退回去用发行版自带的 SDL2 ——
+        # 版本循环会因此选到基于 SDL2 的更老 scrcpy（≤ 3.0.1），照样出可用产物，
+        # 比整轮构建失败强得多。
+        SDL3_CMAKE_OK=0
+        if cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
                 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
                 -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
                 > "$VENDOR_DIR/sdl3-cmake.log" 2>&1; then
+            SDL3_CMAKE_OK=1
+        else
             warn "SDL3 首次 cmake 配置失败，错误摘要："
-            tail -15 "$VENDOR_DIR/sdl3-cmake.log" >&2 || true
+            tail -10 "$VENDOR_DIR/sdl3-cmake.log" >&2 || true
             warn "改用最小依赖配置重试（-DSDL_X11_XTEST=OFF -DSDL_ALSA=OFF）…"
             rm -rf "$VENDOR_DIR/sdl3-build"
-            cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
-                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
-                -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
-                -DSDL_X11_XTEST=OFF -DSDL_ALSA=OFF \
-                || die "SDL3 的 cmake 配置失败（把上面的报错发出来）"
+            if cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
+                    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
+                    -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
+                    -DSDL_X11_XTEST=OFF -DSDL_ALSA=OFF \
+                    > "$VENDOR_DIR/sdl3-cmake.log" 2>&1; then
+                SDL3_CMAKE_OK=1
+            fi
         fi
-        cmake --build "$VENDOR_DIR/sdl3-build" -j"$(nproc)" >/dev/null || die "SDL3 编译失败"
-        cmake --install "$VENDOR_DIR/sdl3-build" >/dev/null || die "SDL3 安装失败"
+
+        SDL3_BUILT=0
+        if [ "$SDL3_CMAKE_OK" -eq 1 ] \
+                && cmake --build "$VENDOR_DIR/sdl3-build" -j"$(nproc)" >/dev/null 2>&1 \
+                && cmake --install "$VENDOR_DIR/sdl3-build" >/dev/null 2>&1; then
+            SDL3_BUILT=1
+        fi
+
+        if [ "$SDL3_BUILT" -eq 1 ]; then
+            info "SDL3 已装到 $VENDOR_SDL3"
+        else
+            warn "SDL3 编不出来 —— 不终止，改用发行版自带的 SDL2 继续"
+            warn "（scrcpy ≤ 3.0.1 基于 SDL2，版本循环会自动退到能编出来的那一版）"
+            rm -rf "$VENDOR_SDL3" "$VENDOR_DIR/sdl3-build"
+        fi
         rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.gz"
         info "SDL3 已装到 $VENDOR_SDL3"
     fi
