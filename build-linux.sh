@@ -191,6 +191,12 @@ scrcpy_usable() {
 }
 
 github_latest_tag() {
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        curl -fsSL --max-time 25 -H "Authorization: Bearer ${GITHUB_TOKEN}" "$1" 2>/dev/null \
+            | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+            | sed -n '1p' || true
+        return 0
+    fi
     curl -fsSL --max-time 25 "$1" 2>/dev/null \
         | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
         | sed -n '1p' || true
@@ -198,11 +204,19 @@ github_latest_tag() {
 
 # 取最近 N 个 scrcpy 版本号（新→旧）。用于「从新到旧试到能编为止」
 github_release_versions() {
-    local n="${1:-12}"
-    curl -fsSL --max-time 25 \
-        "https://api.github.com/repos/Genymobile/scrcpy/releases?per_page=${n}" 2>/dev/null \
+    local n="${1:-12}" out=""
+    # 带上 GITHUB_TOKEN 时用认证调用：未认证只有 60 次/小时/IP，
+    # CI 上多个 job 共用 runner IP 池很容易被限流（实测踩到过）
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        out="$(curl -fsSL --max-time 25 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                 "https://api.github.com/repos/Genymobile/scrcpy/releases?per_page=${n}" 2>/dev/null || true)"
+    else
+        out="$(curl -fsSL --max-time 25 \
+                 "https://api.github.com/repos/Genymobile/scrcpy/releases?per_page=${n}" 2>/dev/null || true)"
+    fi
+    printf '%s\n' "$out" \
         | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\?\([0-9][^"]*\)".*/\1/p' \
-        | sed -n "1,${n}p" || true
+        | sed -n "1,${n}p"
 }
 
 find_first() {
@@ -297,8 +311,11 @@ build_scrcpy_from_source() {
         CANDS="$(github_release_versions 20)"
     fi
     if [ -z "$CANDS" ]; then
-        die "无法从 GitHub 取到 scrcpy 版本列表（网络问题？可手动指定 --scrcpy-version 3.1）
-     原始接口：https://api.github.com/repos/Genymobile/scrcpy/releases"
+        # 兜底：内置一组实际存在、覆盖面够的版本（新→旧）。
+        # 实测这些都能在对应的发行版上配置成功：4.1 在 Debian 12 / Ubuntu 22.04、
+        # 3.0.1 用 SDL2 兜底老发行版。
+        warn "取不到 scrcpy 版本列表（GitHub API 限流或网络问题），改用内置候选"
+        CANDS="4.1 4.0 3.3.4 3.2 3.1 3.0.1 2.7 2.4"
     fi
 
     GOT_VER=""
@@ -366,7 +383,9 @@ build_scrcpy_from_source() {
     # 清掉没被选中的候选 server，避免 vendor/ 里堆一堆文件（选中的那个不能动）
     for f in "$VENDOR_DIR"/scrcpy-server-*; do
         [ -f "$f" ] || continue
-        [ "$f" = "$GOT_SERVER" ] && continue
+        if [ "$f" = "$GOT_SERVER" ]; then
+            continue
+        fi
         rm -f "$f"
     done
 

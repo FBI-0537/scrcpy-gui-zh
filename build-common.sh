@@ -386,6 +386,29 @@ _run_pkg_cmd() {
     esac
 }
 
+# 临时禁用 -security 源（索引与仓库不同步时会 404）。
+# 返回 0 表示确实改了东西，调用方可以据此重试。
+disable_security_repo() {
+    case "$DISTRO_FAMILY" in
+        debian) ;;
+        *) return 1 ;;
+    esac
+    local f changed=0
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources \
+             /etc/apt/sources.list.d/*.list; do
+        [ -f "$f" ] || continue
+        if grep -q 'security' "$f" 2>/dev/null; then
+            sed -i '/security/ s|^\([^#]\)|# [已临时禁用: security 索引不同步] \1|' "$f" 2>/dev/null && changed=1
+        fi
+    done
+    if [ "$changed" -eq 0 ]; then
+        return 1
+    fi
+    warn "已临时禁用 -security 源（其索引与仓库不同步会 404），改用主仓版本重试"
+    apt-get update -qq >/dev/null 2>&1 || true
+    return 0
+}
+
 pkg_refresh() {
     local SUDO=""
     if [ "$(id -u)" -ne 0 ]; then
@@ -425,9 +448,31 @@ pkg_install() {
     if [ "$#" -eq 0 ]; then
         return 0
     fi
-    if _run_pkg_cmd "$@"; then
+    local log
+    log="$(mktemp 2>/dev/null || echo /tmp/pkg-install.log)"
+    if _run_pkg_cmd "$@" >"$log" 2>&1; then
+        cat "$log"
         return 0
     fi
+    cat "$log"
+
+    # Debian 11（bullseye）的 -security 源索引与仓库池不同步：索引里写着
+    # python3.9 3.9.2-1+deb11u7，池子里却 404。apt 会因此**整批失败**，
+    # 连主仓里能装的包也装不上（在 GitHub 干净网络下复现过）。
+    # 这时把 -security 源临时禁用，用主仓版本重试即可 —— 容器内构建够用。
+    case "$DISTRO_FAMILY" in
+        debian)
+            if grep -q '404' "$log" && grep -qi 'security' "$log"; then
+                if disable_security_repo; then
+                    if _run_pkg_cmd "$@" >"$log" 2>&1; then
+                        cat "$log"
+                        return 0
+                    fi
+                    cat "$log"
+                fi
+            fi ;;
+    esac
+
     warn "直接安装失败，先刷新软件源再重试…"
     pkg_refresh || return 1
     _run_pkg_cmd "$@"
