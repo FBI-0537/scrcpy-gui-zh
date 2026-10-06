@@ -272,7 +272,7 @@ build_scrcpy_from_source() {
         CANDS="$SCRCPY_VERSION"
     else
         info "查询可用的 scrcpy 版本列表…"
-        CANDS="$(github_release_versions 12)"
+        CANDS="$(github_release_versions 20)"
     fi
     if [ -z "$CANDS" ]; then
         die "无法从 GitHub 取到 scrcpy 版本列表（网络问题？可手动指定 --scrcpy-version 3.1）
@@ -288,10 +288,12 @@ build_scrcpy_from_source() {
         cand_server="$VENDOR_DIR/scrcpy-server-$ver"
         rm -rf "$src" "$tarball" "$cand_server" "$VENDOR_DIR/meson-setup.log"
 
-        # 源码：用 releases 里的 tarball（比 archive/refs 更稳）
+        # 源码只能从 archive/refs/tags 拿 —— GitHub release 的资产里
+        # 没有源码包（只有 scrcpy-server-vX.Y、scrcpy-linux-x86_64-vX.Y.tar.gz 等）
         if ! curl -fL --retry 2 --max-time 600 -o "$tarball" \
-                "https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-v$ver.tar.gz" 2>/dev/null; then
-            warn "  · v$ver 源码下载失败，试下一个"
+                "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.gz" \
+                2>"$VENDOR_DIR/curl-err.log"; then
+            warn "  · v$ver 源码下载失败：$(tail -1 "$VENDOR_DIR/curl-err.log" 2>/dev/null)"
             continue
         fi
         mkdir -p "$src"
@@ -304,8 +306,9 @@ build_scrcpy_from_source() {
 
         # 同版本 server（meson 靠它把 scrcpy-server 装进目标树）
         if ! curl -fL --retry 2 --max-time 600 -o "$cand_server" \
-                "https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-server-v$ver" 2>/dev/null; then
-            warn "  · v$ver 的 scrcpy-server 下载失败，试下一个"
+                "https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-server-v$ver" \
+                2>"$VENDOR_DIR/curl-err.log"; then
+            warn "  · v$ver 的 scrcpy-server 下载失败：$(tail -1 "$VENDOR_DIR/curl-err.log" 2>/dev/null)"
             rm -rf "$src"
             continue
         fi
