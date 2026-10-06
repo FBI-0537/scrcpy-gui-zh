@@ -164,8 +164,11 @@ pkg_name_for_key() {
         # 拆分再交给包管理器的；写成空格分隔会被当成一个包名而安装失败。
         # ------------------------------------------------------------------
         ffmpeg-dev)
+            # scrcpy 的 meson 会检查这些：libavformat / libavcodec / libavutil /
+            # libavdevice（缺一个就 ERROR），swresample/swscale 供录制与重采样。
+            # 一次装全，别一个个试。
             case "$DISTRO_FAMILY" in
-                debian) printf 'libavcodec-dev\nlibavformat-dev\nlibavutil-dev\nlibswresample-dev\n' ;;
+                debian) printf 'libavcodec-dev\nlibavdevice-dev\nlibavfilter-dev\nlibavformat-dev\nlibavutil-dev\nlibswresample-dev\nlibswscale-dev\n' ;;
                 rhel)   printf 'ffmpeg-devel\n' ;;
                 arch)   printf 'ffmpeg\n' ;;
                 suse)   printf 'ffmpeg-devel\n' ;;
@@ -666,14 +669,16 @@ upgrade_ffmpeg_dev() {
     fi
     apt-get update -qq >/dev/null 2>&1 || true
     if apt-get install -y -t "${codename}-backports" \
-            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev >/dev/null 2>&1; then
+            libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev \
+            libavutil-dev libswresample-dev libswscale-dev >/dev/null 2>&1; then
         cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
         info "  · 现在 libavformat：${cur:-未知}"
         if [ -n "$cur" ] && ver_ge "$cur" 60.0; then
             return 0
         fi
     fi
-    info "  · backports 里没有更新的 FFmpeg，继续用系统自带的"
+    info "  · backports 里没有更新的 FFmpeg（或安装失败），继续用系统自带的"
+    warn "  · 当前 libavformat：${cur:-未知}；想要最新版 scrcpy 需要 ≥ 60（FFmpeg 6）"
     rm -f "$src" 2>/dev/null || true
     return 1
 }
