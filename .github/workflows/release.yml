@@ -128,24 +128,45 @@ jobs:
           # 注意：GitHub 的 run 默认是 bash -e，管道一失败就立刻退出，
           # 那样 ${PIPESTATUS[0]} 拿不到、摘要也写不进去。所以这里临时关掉 -e。
           set +e
-          docker run --rm \
-            --platform ${{ matrix.platform }} \
-            -v "$PWD:/src" -w /src \
-            -e APP_VER="${{ needs.plan.outputs.version }}" \
-            ${{ matrix.image }} \
-            bash -c "cd /src && bash ./build-linux.sh --yes ${{ matrix.extra }}" 2>&1 | tee build.log
+
+          # 不走绑定挂载：CI 上 -v "$PWD:/src" 偶发挂载为空，导致容器里
+          # /src/build-linux.sh 不存在 → bash 报 No such file → 退出码 127。
+          # 换成 docker create + docker cp，行为完全确定，也不依赖执行位。
+          echo "== 创建容器 =="
+          cid=$(docker create \
+                  --platform ${{ matrix.platform }} \
+                  -e APP_VER="${{ needs.plan.outputs.version }}" \
+                  -w /src \
+                  ${{ matrix.image }} \
+                  bash -c "cd /src && bash ./build-linux.sh --yes ${{ matrix.extra }}")
+          echo "容器 id：$cid"
+          if [ -z "$cid" ]; then
+            echo "::error::docker create 失败"
+            exit 1
+          fi
+
+          echo "== 把源码拷进容器 =="
+          docker cp . "$cid:/src"
+          docker start -a "$cid" 2>&1 | tee build.log
           rc=${PIPESTATUS[0]}
           echo "构建退出码：$rc"
+
+          # 把产物取回宿主机（verify-release.py 与上传都要用）
+          mkdir -p dist
+          docker cp "$cid:/src/dist/." dist/ 2>/dev/null || true
+          ls -l dist 2>&1 || true
+
           if [ "$rc" -ne 0 ]; then
             {
               echo "### ❌ 构建失败（退出码 $rc）"
               echo
               echo '最后 40 行：'
               echo '```'
-              tail -40 build.log
+              tail -40 build.log 2>/dev/null
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+          docker rm -f "$cid" >/dev/null 2>&1 || true
           exit "$rc"
 
       - name: 验收产物（架构是否与文件名一致、组件是否齐全）
