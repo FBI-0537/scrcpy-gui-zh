@@ -219,9 +219,9 @@ build_scrcpy_from_source() {
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "发行版没有 SDL3（老发行版常见），改为自行编译到 vendor/sdl3"
         info "这是整个流程最耗时的一步，请耐心等待…"
-        # 编 SDL3 必须有 X11 / Wayland 的头文件，否则 cmake 会静默禁用这些
-        # 视频后端，产物在桌面机上开不了窗口
-        install_keys_optional x11-dev
+        # 编 SDL3 需要 X11 / Wayland / 音频 / GL 的开发库：
+        # 缺 XTEST cmake 直接失败；缺 ALSA 会编出没有声音的 SDL3
+        install_keys_optional sdl3-build-deps
         sdlver="$(github_latest_tag https://api.github.com/repos/libsdl-org/SDL/releases/latest)"
         sdlver="${sdlver#release-}"
         [ -n "$sdlver" ] || die "无法确定 SDL3 版本，请检查网络 / 系统代理"
@@ -233,10 +233,22 @@ build_scrcpy_from_source() {
         mkdir -p "$VENDOR_DIR/sdl3-src"
         tar -xzf "$VENDOR_DIR/sdl3.tar.gz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
             || die "SDL3 解压失败"
-        cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
-            -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF >/dev/null \
-            || die "SDL3 的 cmake 配置失败"
+        # 第一次按完整依赖配置；失败时打印错误摘要，再用最小依赖重试一次
+        # （关掉 XTEST / ALSA 这些可选后端），避免因为一个可选依赖整轮白跑
+        if ! cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
+                -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
+                > "$VENDOR_DIR/sdl3-cmake.log" 2>&1; then
+            warn "SDL3 首次 cmake 配置失败，错误摘要："
+            tail -15 "$VENDOR_DIR/sdl3-cmake.log" >&2 || true
+            warn "改用最小依赖配置重试（-DSDL_X11_XTEST=OFF -DSDL_ALSA=OFF）…"
+            rm -rf "$VENDOR_DIR/sdl3-build"
+            cmake -S "$VENDOR_DIR/sdl3-src" -B "$VENDOR_DIR/sdl3-build" \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$VENDOR_SDL3" \
+                -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_TESTS=OFF \
+                -DSDL_X11_XTEST=OFF -DSDL_ALSA=OFF \
+                || die "SDL3 的 cmake 配置失败（把上面的报错发出来）"
+        fi
         cmake --build "$VENDOR_DIR/sdl3-build" -j"$(nproc)" >/dev/null || die "SDL3 编译失败"
         cmake --install "$VENDOR_DIR/sdl3-build" >/dev/null || die "SDL3 安装失败"
         rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.gz"

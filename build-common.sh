@@ -187,16 +187,19 @@ pkg_name_for_key() {
                 suse)   printf 'libSDL3-devel\n' ;;
                 alpine) printf 'sdl3-dev\n' ;;
             esac ;;
-        # SDL3 从源码编译时需要的 X11 / Wayland 头文件。
+        # SDL3 从源码编译时的依赖（cmake 会检查这些）。
         # 不装的话 cmake 会**静默禁用**这些视频后端，编出来的 SDL3 在桌面机上
         # 根本开不了窗口 —— 产物看起来正常，实际不能用。
-        x11-dev)
+        # SDL3 从源码编译时的依赖（cmake 会检查这些）。
+        # 缺 XTEST 会**直接配置失败**；缺 ALSA/PulseAudio 会编出没有声音的 SDL3；
+        # 缺 GL/EGL 则渲染后端不全。
+        sdl3-build-deps)
             case "$DISTRO_FAMILY" in
-                debian) printf 'libx11-dev\nlibxext-dev\nlibxrandr-dev\nlibxi-dev\nlibxcursor-dev\nlibxfixes-dev\nlibxss-dev\nlibxkbcommon-dev\nlibwayland-dev\n' ;;
-                rhel)   printf 'libX11-devel\nlibXext-devel\nlibXrandr-devel\nlibXi-devel\nlibXcursor-devel\nlibXfixes-devel\nlibXScrnSaver-devel\nlibxkbcommon-devel\nwayland-devel\n' ;;
-                arch)   printf 'libx11\nlibxext\nlibxrandr\nlibxi\nlibxcursor\nlibxfixes\nlibxss\nlibxkbcommon\nwayland\n' ;;
-                suse)   printf 'libX11-devel\nlibXext-devel\nlibXrandr-devel\nlibXi-devel\nlibXcursor-devel\nlibXfixes-devel\nlibXss-devel\nlibxkbcommon-devel\nwayland-devel\n' ;;
-                alpine) printf 'libx11-dev\nlibxext-dev\nlibxrandr-dev\nlibxi-dev\nlibxcursor-dev\nlibxfixes-dev\nlibxscrnsaver-dev\nlibxkbcommon-dev\nwayland-dev\n' ;;
+                debian) printf 'libx11-dev\nlibxext-dev\nlibxrandr-dev\nlibxi-dev\nlibxcursor-dev\nlibxfixes-dev\nlibxss-dev\nlibxtst-dev\nlibxkbcommon-dev\nlibwayland-dev\nlibdecor-0-dev\nlibasound2-dev\nlibpulse-dev\nlibgl1-mesa-dev\nlibegl1-mesa-dev\n' ;;
+                rhel)   printf 'libX11-devel\nlibXext-devel\nlibXrandr-devel\nlibXi-devel\nlibXcursor-devel\nlibXfixes-devel\nlibXScrnSaver-devel\nlibXtst-devel\nlibxkbcommon-devel\nwayland-devel\nlibdecor-devel\nalsa-lib-devel\npulseaudio-libs-devel\nmesa-libGL-devel\nmesa-libEGL-devel\n' ;;
+                arch)   printf 'libx11\nlibxext\nlibxrandr\nlibxi\nlibxcursor\nlibxfixes\nlibxss\nlibxtst\nlibxkbcommon\nwayland\nlibdecor\nalsa-lib\nlibpulse\nmesa\n' ;;
+                suse)   printf 'libX11-devel\nlibXext-devel\nlibXrandr-devel\nlibXi-devel\nlibXcursor-devel\nlibXfixes-devel\nlibXss-devel\nlibXtst-devel\nlibxkbcommon-devel\nwayland-devel\nlibdecor-devel\nalsa-devel\nlibpulse-devel\nMesa-libGL-devel\nMesa-libEGL-devel\n' ;;
+                alpine) printf 'libx11-dev\nlibxext-dev\nlibxrandr-dev\nlibxi-dev\nlibxcursor-dev\nlibxfixes-dev\nlibxscrnsaver-dev\nlibxtst-dev\nlibxkbcommon-dev\nwayland-dev\nlibdecor-dev\nalsa-lib-dev\npulseaudio-dev\nmesa-dev\n' ;;
             esac ;;
         adb)
             case "$DISTRO_FAMILY" in
