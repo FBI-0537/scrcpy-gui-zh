@@ -134,6 +134,17 @@ pkg_name_for_key() {
                 suse)   printf 'python3-tk\n' ;;
                 alpine) printf 'py3-tkinter\n' ;;
             esac ;;
+        # PyInstaller 打包需要 Python 共享库 libpython3.X.so.1.0；
+        # Debian/Ubuntu 的系统 python3 是静态链接的，默认**不带**这个 .so，
+        # 由 python3-dev（依赖 libpython3.X-dev → libpython3.X）提供
+        python-dev)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'python3-dev\n' ;;
+                rhel)   printf 'python3-devel\n' ;;
+                arch)   printf 'python\n' ;;
+                suse)   printf 'python3-devel\n' ;;
+                alpine) printf 'python3-dev\n' ;;
+            esac ;;
         venv)
             case "$DISTRO_FAMILY" in
                 debian) printf 'python3-venv\n' ;;
