@@ -301,7 +301,11 @@ build_scrcpy_from_source() {
     #   scrcpy 5.0 需要 libavformat ≥ 60.3（FFmpeg 6.3+）
     #   而 Debian 12 只有 FFmpeg 5.1（libavformat 59.27），Debian 11 更低
     # 固定取「最新版」必然失败，所以**从新到旧逐个试**，用第一个
-    # meson setup 能通过的版本。
+    # **配置并通过编译**的版本。
+    # ⚠️ 只看 meson setup 是不够的：它按 pkg-config 的版本号判断依赖，
+    # 发现不了「头文件不存在」—— 例如 Ubuntu 20.04 的 FFmpeg 4.2 没有
+    # libavcodec/packet.h（4.3 才有），而 scrcpy 4.x 会 include 它，
+    # 结果是配置通过、编译才报 fatal error。所以必须真编一次。
     # 注意 scrcpy-server 的版本必须与客户端一致，所以每试一个版本就先下
     # 对应版本的 server（只有几百 KB），配置成功后才正式采用。
     if [ -n "$SCRCPY_VERSION" ]; then
@@ -353,24 +357,37 @@ build_scrcpy_from_source() {
             continue
         fi
 
-        if ( cd "$src" && meson setup build --buildtype=release \
+        if ! ( cd "$src" && meson setup build --buildtype=release \
                 --prefix="$VENDOR_SCRCPY" \
                 -Dprebuilt_server="$cand_server" ) > "$VENDOR_DIR/meson-setup.log" 2>&1; then
-            info "  · v$ver 依赖满足，用它来编译"
-            GOT_VER="$ver"
-            GOT_TPL="$src"
-            GOT_SERVER="$cand_server"
-            break
+            warn "  · v$ver 配置不通过（多半本机 FFmpeg 太旧）："
+            grep -E 'ERROR:|need ' "$VENDOR_DIR/meson-setup.log" 2>/dev/null \
+                | sed -n '1,3p' | while IFS= read -r l; do warn "      $l"; done
+            rm -rf "$src" "$cand_server"
+            continue
         fi
-        warn "  · v$ver 配置不通过（多半本机 FFmpeg 太旧）："
-        grep -E 'ERROR:|need ' "$VENDOR_DIR/meson-setup.log" 2>/dev/null \
-            | sed -n '1,3p' | while IFS= read -r l; do warn "      $l"; done
-        rm -rf "$src" "$cand_server"
+
+        # 配置通过 ≠ 能编出来（见上面的说明），所以这里**真编一次**再定版本。
+        # 编不过就丢掉落下一个 —— 老发行版上往往要靠更老的 scrcpy 才能过。
+        if ! ninja -C "$src/build" > "$VENDOR_DIR/ninja.log" 2>&1; then
+            warn "  · v$ver 编译失败（多半本机 FFmpeg 太旧 / 缺头文件），试下一个："
+            grep -E 'fatal error|error:' "$VENDOR_DIR/ninja.log" 2>/dev/null \
+                | sed -n '1,2p' | while IFS= read -r l; do warn "      $l"; done
+            rm -rf "$src" "$cand_server"
+            continue
+        fi
+
+        info "  · v$ver 配置并通过编译，用它"
+        GOT_VER="$ver"
+        GOT_TPL="$src"
+        GOT_SERVER="$cand_server"
+        break
     done
 
     if [ -z "$GOT_VER" ]; then
-        die "试遍了候选版本都配置不通过。最后一个版本的报错在：
-     $VENDOR_DIR/meson-setup.log
+        die "试遍了候选版本都没能构建成功（配置或编译都没过）。日志：
+     $VENDOR_DIR/meson-setup.log   （依赖检查）
+     $VENDOR_DIR/ninja.log         （编译错误）
      可以手动指定一个更老的版本重试：--scrcpy-version 3.1"
     fi
 
@@ -389,8 +406,8 @@ build_scrcpy_from_source() {
         rm -f "$f"
     done
 
-    info "编译 scrcpy v$GOT_VER（几分钟）…"
-    ninja -C "$GOT_TPL/build" || die "scrcpy 编译失败"
+    # 编译已经在选版循环里做过了，这里只安装
+    info "安装 scrcpy v$GOT_VER 到项目目录…"
     ninja -C "$GOT_TPL/build" install || die "scrcpy 安装失败"
     rm -rf "$GOT_TPL"
 
