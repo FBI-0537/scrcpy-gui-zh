@@ -1,4 +1,19 @@
 ### 修复
+- **构建矩阵换掉已 EOL 的 Debian 11，改用 Ubuntu 20.04（同为 glibc 2.31）**：
+  Debian 11 已于 2026-08 结束安全支持，bullseye-security 的索引里还写着旧版本
+  而池子里的文件已被清理 → apt 报 404、整批安装失败（在 GitHub 的干净网络下
+  同样复现，与用户代理无关）；绕开 security 源又会和镜像里预装的
+  perl-base 版本冲突（held broken packages）。
+  Ubuntu 20.04 的 glibc 同样是最低档 2.31，覆盖 Debian 11+ / Ubuntu 20.04+，
+  且仓库仍然健康。矩阵现在是 7 个目标：
+    ubuntu:20.04 amd64/arm64 → glibc2.31-x86_64 / -aarch64
+    debian:12    amd64/arm/v7 → glibc2.36-x86_64 / -armv7l
+    ubuntu:22.04 amd64/arm64 → glibc2.35-x86_64 / -aarch64
+    ubuntu:24.04 amd64       → glibc2.39-x86_64
+- **apt 失败时捕获输出**，若同时出现 404 与 security 才尝试禁用 security 源重试
+  （此前无条件重试会掩盖真实原因）。
+
+### 修复
 - **定位到总根源：宿主机的 DNS 被代理软件 fake-IP 接管，容器解析出 198.18.x.x 假 IP**
   （实测容器内 `getent hosts mirrors.tuna.tsinghua.edu.cn` → `198.18.0.15`，
   `registry-1.docker.io` → `198.18.0.21`；容器里没有任何 proxy 环境变量，

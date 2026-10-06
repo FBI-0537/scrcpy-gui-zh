@@ -148,7 +148,7 @@ $MatrixExtra = @(
     @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 12+ / Ubuntu 22.04+（glibc 2.36）' }
     @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'Debian 12 arm64（无线配对可用）' }
     @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'Debian 12 armhf（无线配对可用）' }
-    @{ Family = 'debian'; Image = 'debian:11'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Debian 11+ / Ubuntu 20.04+（glibc 2.31，兼容最老）' }
+    @{ Family = 'debian'; Image = 'ubuntu:20.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = 'Ubuntu 20.04+ / Ubuntu 20.04+（glibc 2.31，兼容最老）' }
     @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'RHEL 8+ / Rocky 8+ / CentOS 8+（glibc 2.28，红帽里最广）' }
     @{ Family = 'rhel';   Image = 'rockylinux:8'; Plat = 'linux/arm64'; Arch = 'arm64';  Note = 'RHEL 8+ arm64（glibc 2.28）' }
     @{ Family = 'arch';   Image = 'archlinux:latest'; Plat = 'linux/amd64'; Arch = 'x86_64'; Note = 'Arch / Manjaro / EndeavourOS（滚动发行版）' }
