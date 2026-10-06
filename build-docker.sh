@@ -58,7 +58,7 @@ die()  { err "$*"; exit 1; }
 
 # 矩阵条目：平台|镜像|架构分组|说明
 MATRIX_DEFAULT="
-linux/amd64|debian:11|x86_64|一份覆盖所有发行版家族（glibc 2.31）
+linux/amd64|ubuntu:20.04|x86_64|一份覆盖所有发行版家族（glibc 2.31）
 linux/arm64|debian:12|arm64|ARM64，含无线配对（glibc 2.36）
 linux/arm/v7|debian:12|armhf|ARM32，含无线配对（glibc 2.36）
 "
@@ -77,17 +77,17 @@ linux/arm/v7|debian:12|armhf|ARM32，含无线配对（glibc 2.36）
 #   debian:11（glibc 2.31）所有候选 adb 都跑不起来 → 只有 USB / USB 转无线
 
 MATRIX_ALL="
-linux/amd64|ubuntu:20.04|x86_64|Debian 11（glibc 2.31）
+linux/amd64|ubuntu:20.04|x86_64|Ubuntu 20.04（glibc 2.31）
 linux/amd64|debian:12|x86_64|Debian 12（glibc 2.36）
 linux/amd64|debian:13|x86_64|Debian 13（glibc 2.41）
 linux/amd64|ubuntu:20.04|x86_64|Ubuntu 20.04（glibc 2.31）
 linux/amd64|ubuntu:22.04|x86_64|Ubuntu 22.04（glibc 2.35）
 linux/amd64|ubuntu:24.04|x86_64|Ubuntu 24.04（glibc 2.39）
-linux/arm64|ubuntu:20.04|arm64|Debian 11 arm64（glibc 2.31，无无线配对）
+linux/arm64|ubuntu:20.04|arm64|Ubuntu 20.04 arm64（glibc 2.31）
 linux/arm64|debian:12|arm64|Debian 12 arm64（glibc 2.36，无线配对可用）
 linux/arm64|debian:13|arm64|Debian 13 arm64（glibc 2.41，无线配对可用）
 linux/arm64|ubuntu:22.04|arm64|Ubuntu 22.04 arm64（glibc 2.35）
-linux/arm/v7|ubuntu:20.04|armhf|Debian 11 armhf（glibc 2.31，无无线配对）
+linux/arm/v7|ubuntu:20.04|armhf|Ubuntu 20.04 armhf（glibc 2.31）
 linux/arm/v7|debian:12|armhf|Debian 12 armhf（glibc 2.36，无线配对可用）
 linux/amd64|rockylinux:8|x86_64|RHEL 8+（glibc 2.28）
 linux/arm64|rockylinux:8|arm64|RHEL 8+ arm64

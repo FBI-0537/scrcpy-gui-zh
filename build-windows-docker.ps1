@@ -131,7 +131,7 @@ function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color 
 # 需要覆盖更老的系统（例如 RHEL 8 / glibc 2.28）时，加 -AllDistros 选对应镜像。
 # ---------------------------------------------------------------------------
 $Matrix = @(
-    @{ Family = 'debian'; Image = 'debian:11'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = '一份覆盖所有发行版家族（glibc 2.31）' }
+    @{ Family = 'debian'; Image = 'ubuntu:20.04'; Plat = 'linux/amd64';  Arch = 'x86_64'; Note = '一份覆盖所有发行版家族（glibc 2.31）' }
     @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm64';  Arch = 'arm64';  Note = 'ARM64，含无线配对（glibc 2.36）' }
     @{ Family = 'debian'; Image = 'debian:12'; Plat = 'linux/arm/v7'; Arch = 'armhf';  Note = 'ARM32，含无线配对（glibc 2.36）' }
 )
