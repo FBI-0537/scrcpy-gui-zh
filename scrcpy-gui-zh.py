@@ -1139,6 +1139,7 @@ class ScrcpyGui:
         # GL 驱动缺失时，自动用软件渲染重试一次（只重试一次，避免死循环）
         self._force_software_render = False
         self._software_retry_done = False
+        self._want_software_retry = False
         self._usb_fix_offered = False  # 是否已弹过「USB 权限」提示
         self._fuse_warned = False      # 是否已弹过「缺 FUSE」提示
 
@@ -1624,7 +1625,12 @@ class ScrcpyGui:
         lines.append("Python     : %s" % sys.version.split()[0])
         lines.append("机器架构   : %s" % platform.machine())
         lines.append("scrcpy     : %s" % (SCRCPY or "未找到"))
-        lines.append("scrcpy 版本: %s" % (scrcpy_version() or "未知"))
+        # 注意：scrcpy_version() 返回的是元组 (3, 1)，直接 "%s" % 元组会被当成
+        # 多个格式化参数，报 "not all arguments converted during string formatting"
+        _ver = scrcpy_version()
+        if isinstance(_ver, tuple):
+            _ver = ".".join(str(x) for x in _ver)
+        lines.append("scrcpy 版本: %s" % (_ver or "未知"))
         lines.append("adb        : %s" % (ADB or "未找到"))
         rc, adbout = run([ADB, "version"]) if ADB else (1, "")
         adb_lines = [x.strip() for x in adbout.strip().splitlines() if x.strip()]
@@ -1947,8 +1953,11 @@ class ScrcpyGui:
                 self._software_retry_done = True
                 self._force_software_render = True   # 追加 --render-driver=software
                 enable_software_gl()                 # 同时置 Mesa 软件渲染环境变量
+                # 交给 _on_mirror_end 触发：此刻 _mirroring 还是 True，
+                # 直接 start_mirror 会被"已经在投屏中"的守卫拦掉
+                self._want_software_retry = True
                 self.log("")
-                self.log("→ 自动改用软件渲染重试一次（两层兜底）…")
+                self.log("→ 稍后自动改用软件渲染重试一次（两层兜底）…")
                 self.log("   · 环境变量 LIBGL_ALWAYS_SOFTWARE=1 / GALLIUM_DRIVER=llvmpipe")
                 self.log("   · 命令行 --render-driver=software")
                 self.log("   软件渲染不需要 OpenGL，虚拟机/云主机上通常能直接出画面；")
@@ -1972,6 +1981,11 @@ class ScrcpyGui:
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
         self._set_status("已停止")
+        if getattr(self, "_want_software_retry", False):
+            self._want_software_retry = False
+            self.log("→ 开始软件渲染重试…")
+            # 用 _auto=True 调用，避免把刚设好的软件渲染开关又重置掉
+            self.root.after(300, lambda: self.start_mirror(True))
 
     def stop_mirror(self):
         if self.proc and self.proc.poll() is None:
