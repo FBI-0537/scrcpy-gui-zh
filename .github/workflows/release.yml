@@ -54,11 +54,9 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
           fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
-                    full='{"include":[
+                              full='{"include":[
             {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64","extra":"--auto-scrcpy"},
-            {"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"},
             {"image":"ubuntu:22.04","platform":"linux/amd64","label":"glibc2.35-x86_64","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:24.04","platform":"linux/amd64","label":"glibc2.39-x86_64","extra":"--auto-scrcpy"},
             {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
             {"image":"ubuntu:22.04","platform":"linux/arm64","label":"glibc2.35-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
             {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l","extra":"--auto-scrcpy --allow-old-adb"}

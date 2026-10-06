@@ -1,3 +1,12 @@
+### 精简
+- **x86_64 从 4 份精简到 2 份**：glibc 只向后兼容，最低档（2.31）能跑在所有更新的
+  系统上，所以 `glibc2.35` / `glibc2.36` / `glibc2.39` 三份对 2.31 而言完全冗余。
+  保留两份的真实理由是 **scrcpy 版本**而非 glibc：
+    · `glibc2.31-x86_64`（ubuntu:20.04，FFmpeg 4.2）→ 兼容面最广
+    · `glibc2.35-x86_64`（ubuntu:22.04，FFmpeg 4.4）→ scrcpy 4.1，且覆盖
+      Debian 12+ / Ubuntu 22.04+ / Fedora 36+ / Arch
+  矩阵从 7 个目标降到 5 个（x86_64 ×2 + arm64 ×2 + armv7l ×1）。
+
 ### 修复
 - **构建矩阵换掉已 EOL 的 Debian 11，改用 Ubuntu 20.04（同为 glibc 2.31）**：
   Debian 11 已于 2026-08 结束安全支持，bullseye-security 的索引里还写着旧版本
