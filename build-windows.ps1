@@ -71,6 +71,30 @@ $VendorScrcpy = Join-Path $Vendor 'scrcpy'
 
 function Write-Step($text) { Write-Host ''; Write-Host "==> $text" -ForegroundColor Cyan }
 function Write-Info2($text) { Write-Host "[信息] $text" -ForegroundColor Green }
+function Install-PipPackage {
+    # 依次尝试：默认 PyPI → 清华镜像 → 阿里云镜像。
+    # 每次都把 pip 的**原始输出**打到控制台（不再吞掉），
+    # 失败时才知道到底是网络、代理还是 pip 本身的问题。
+    param([string]$Name)
+    $idxList = @(
+        $null,
+        'https://pypi.tuna.tsinghua.edu.cn/simple',
+        'https://mirrors.aliyun.com/pypi/simple/'
+    )
+    foreach ($idx in $idxList) {
+        $a = @('-m', 'pip', 'install', '--upgrade',
+               '--timeout', '60', '--retries', '5', $Name)
+        if ($idx) {
+            Write-Info2 ("改用镜像重试：" + $idx)
+            $a += @('-i', $idx, '--trusted-host', ([Uri]$idx).Host)
+        }
+        if ((Invoke-Python $a) -eq 0) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Write-Warn2($text) { Write-Host "[注意] $text" -ForegroundColor Yellow }
 function Fail($text) { Write-Host "[错误] $text" -ForegroundColor Red; exit 1 }
 
@@ -203,12 +227,20 @@ Write-Step '2/7 安装/检查 PyInstaller'
 # ---------------------------------------------------------------------------
 if (-not (Test-Python @('-m', 'PyInstaller', '--version'))) {
     Write-Info2 '未检测到 PyInstaller，正在安装…'
-    if ((Invoke-Python @('-m', 'pip', 'install', '--upgrade', 'pyinstaller')) -ne 0) {
+    if (-not (Install-PipPackage 'pyinstaller')) {
         Fail @'
-PyInstaller 安装失败。常见原因是网络/代理问题：
-  · 报 127.0.0.1:7890 连接被拒时，系统代理开着但代理软件没运行，
-    先关掉系统代理，或换国内镜像：
-      python -m pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
+PyInstaller 安装失败（上面有 pip 的原始报错，请先看那几行）。
+
+常见原因与对策：
+  · 报 127.0.0.1:7890 连接被拒 / 代理相关
+      系统代理开着但代理软件没运行 → 关掉系统代理后重跑
+  · 报超时 / SSL / 连接重置
+      换镜像（本脚本已自动试过清华与阿里云，仍失败可手动指定）：
+        python -m pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
+  · 报 No module named pip
+      python -m ensurepip --upgrade
+  · 报 permission / access denied
+      加 --user：python -m pip install --user pyinstaller
   · 提示 Scripts 目录不在 PATH 时不用管，本脚本用 python -m PyInstaller 调用
 '@
     }
@@ -218,7 +250,7 @@ Write-Info2 'PyInstaller 就绪'
 if (-not $NoSegno) {
     if (-not (Test-Python @('-c', 'import segno'))) {
         Write-Info2 '安装二维码库 segno（用于二维码配对）…'
-        if ((Invoke-Python @('-m', 'pip', 'install', '--quiet', 'segno')) -ne 0) {
+        if (-not (Install-PipPackage 'segno')) {
             Write-Warn2 'segno 安装失败，二维码功能将退化为「复制二维码内容」'
         }
     } else {
