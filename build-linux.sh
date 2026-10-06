@@ -287,6 +287,7 @@ build_scrcpy_from_source() {
 
     GOT_VER=""
     GOT_TPL=""
+    GOT_SERVER=""
     for ver in $CANDS; do
         info "试 scrcpy v$ver …"
         tarball="$VENDOR_DIR/scrcpy-$ver.tar.gz"
@@ -325,6 +326,7 @@ build_scrcpy_from_source() {
             info "  · v$ver 依赖满足，用它来编译"
             GOT_VER="$ver"
             GOT_TPL="$src"
+            GOT_SERVER="$cand_server"
             break
         fi
         warn "  · v$ver 配置不通过（多半本机 FFmpeg 太旧）："
@@ -339,8 +341,18 @@ build_scrcpy_from_source() {
      可以手动指定一个更老的版本重试：--scrcpy-version 3.1"
     fi
 
-    # 采用这个版本的 server：版本必须与客户端一致
-    mv -f "$VENDOR_DIR/scrcpy-server-$GOT_VER" "$VENDOR_SERVER"
+    # 注意：**不要移动** $GOT_SERVER。
+    # meson 已经把 -Dprebuilt_server 的路径写进构建规则，配置完再把文件挪走
+    # 会让 ninja 报 "…/scrcpy-server-4.1, needed by 'server/scrcpy-server',
+    # missing and no known rule to make it"。
+    info "使用 scrcpy-server：$GOT_SERVER（与客户端同为 v$GOT_VER）"
+
+    # 清掉没被选中的候选 server，避免 vendor/ 里堆一堆文件（选中的那个不能动）
+    for f in "$VENDOR_DIR"/scrcpy-server-*; do
+        [ -f "$f" ] || continue
+        [ "$f" = "$GOT_SERVER" ] && continue
+        rm -f "$f"
+    done
 
     info "编译 scrcpy v$GOT_VER（几分钟）…"
     ninja -C "$GOT_TPL/build" || die "scrcpy 编译失败"

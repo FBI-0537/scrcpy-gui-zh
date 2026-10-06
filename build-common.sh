@@ -655,7 +655,8 @@ upgrade_ffmpeg_dev() {
         debian) ;;
         *) return 1 ;;
     esac
-    local cur codename src
+    local cur codename src apt_log
+    apt_log="$(mktemp 2>/dev/null || echo /tmp/apt-backports.log)"
     cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
     if [ -n "$cur" ] && ver_ge "$cur" 60.0; then
         return 0
@@ -670,7 +671,7 @@ upgrade_ffmpeg_dev() {
     apt-get update -qq >/dev/null 2>&1 || true
     if apt-get install -y -t "${codename}-backports" \
             libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev \
-            libavutil-dev libswresample-dev libswscale-dev >/dev/null 2>&1; then
+            libavutil-dev libswresample-dev libswscale-dev >"$apt_log" 2>&1; then
         cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
         info "  · 现在 libavformat：${cur:-未知}"
         if [ -n "$cur" ] && ver_ge "$cur" 60.0; then
@@ -678,6 +679,9 @@ upgrade_ffmpeg_dev() {
         fi
     fi
     info "  · backports 里没有更新的 FFmpeg（或安装失败），继续用系统自带的"
+    if [ -s "$apt_log" ]; then
+        warn "  · apt 最后几行：$(tail -2 "$apt_log" | tr '\n' ' ')"
+    fi
     warn "  · 当前 libavformat：${cur:-未知}；想要最新版 scrcpy 需要 ≥ 60（FFmpeg 6）"
     rm -f "$src" 2>/dev/null || true
     return 1
