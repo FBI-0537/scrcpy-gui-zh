@@ -150,6 +150,22 @@ install_keys_optional() {
     done
 }
 
+# PyInstaller 需要 Python 共享库 libpython3.X.so.1.0。
+#
+# 注意别用「一条 ls 匹配多个 glob」的写法：Debian 上只有一个 glob 能匹配，
+# 另外两个匹配不到会让 ls 返回非 0，于是一装上也被判成"不存在"。
+# 这里逐个目录单独匹配，只为判断存在性。
+have_python_shared_lib() {
+    local d
+    for d in /usr/lib /usr/lib/*/ /usr/local/lib /usr/lib64 /usr/lib64/*/; do
+        [ -d "$d" ] || continue
+        if ls "$d"libpython3*.so.1.0 >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 read_scrcpy_ver() {
     "$1" --version 2>/dev/null | sed -n '1p' | grep -oE '[0-9]+\.[0-9]+' | sed -n '1p' || true
 }
@@ -488,12 +504,6 @@ collect_missing() {
     need_py  venv     venv      "创建构建虚拟环境"
     need_cmd ldd      ldd       "收集依赖库"
     need_cmd objdump  binutils  "PyInstaller 解析 ELF 依赖（缺了报 objdump is required）"
-    # PyInstaller 还要求 Python 共享库；系统 python 常常是静态链接，不带它
-    if ! ls /usr/lib/*/libpython3*.so.1.0 /usr/lib/libpython3*.so.1.0 \
-            /usr/local/lib/libpython3*.so.1.0 >/dev/null 2>&1; then
-        MISSING_PKGS+=("python-dev")
-        MISSING_DESC+=("Python 共享库 libpython3.x.so.1.0 —— PyInstaller 打包必需")
-    fi
     need_cmd curl     curl      "下载依赖"
     need_cmd file     file      "校验产物"
     need_cmd stat     coreutils "读取文件大小"
@@ -549,6 +559,20 @@ if [ "$AUTO_SCRCPY" -eq 1 ]; then
     fi
 else
     info "（未启用 --auto-scrcpy，跳过编译工具链版本检查）"
+fi
+
+# ---------------------------------------------------------------------------
+# PyInstaller 需要的 Python 共享库（装不上也别死在这里）
+#
+# 这一步是「软」的：真正的验证在打包那一步 —— PyInstaller 会明确报出缺哪个
+# .so。在这里 die 只会把「检查写错」变成「构建失败」，得不偿失。
+# ---------------------------------------------------------------------------
+if ! have_python_shared_lib; then
+    info "系统 python 没带共享库（libpython3.x.so.1.0），为 PyInstaller 补装…"
+    install_keys_optional python-dev
+    if ! have_python_shared_lib; then
+        warn "补装后仍未找到共享库 —— 若打包阶段报错，请把提示发出来"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
