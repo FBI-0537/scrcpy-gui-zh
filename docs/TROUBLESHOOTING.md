@@ -5,6 +5,33 @@
 
 ---
 
+## 附：画面出不来，日志里有 libGL error / MESA-LOADER
+
+**现象**（常见于虚拟机）：
+
+```
+libGL error: MESA-LOADER: failed to open vmwgfx: /usr/lib/dri/vmwgfx_dri.so: No such file or directory
+libGL error: MESA-LOADER: failed to open swrast: /usr/lib/dri/swrast_dri.so: No such file or directory
+libGL error: failed to load driver: swrast
+scrcpy 已退出（返回码 1）
+```
+
+**原因**：系统缺少 Mesa 的 OpenGL 驱动（`vmwgfx` 是 VMware 显卡驱动，
+`swrast` 是软件渲染兜底），SDL 拿不到 OpenGL 上下文 → scrcpy 无法建窗口。
+**这是宿主系统缺显卡驱动，不是程序的问题。**
+
+**解决**：
+
+```bash
+sudo apt update && sudo apt install -y libgl1-mesa-dri mesa-utils
+glxinfo -B | head -3        # 看到 renderer 即成功
+```
+
+- 虚拟机里还要在**虚拟机设置中勾选「3D 加速」**
+- 没有 3D 加速时，可在界面「额外参数」里填 `--render-driver=software` 试试
+- 程序会自动识别这类报错，并在日志里直接打印上面的处理方法
+
+
 ## 0. 通用排查流程
 
 ```

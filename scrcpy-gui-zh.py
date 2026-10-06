@@ -1776,15 +1776,49 @@ class ScrcpyGui:
         threading.Thread(target=self._pump_output, args=(self.proc,), daemon=True).start()
 
     def _pump_output(self, proc):
+        # 顺便把输出留一份，退出后好判断是"环境缺东西"还是"scrcpy 报错"
+        collected = []
         try:
             for line in proc.stdout:
-                self.log(line.rstrip())
+                text = line.rstrip()
+                collected.append(text)
+                self.log(text)
         except Exception:  # noqa: BLE001
             pass
         proc.wait()
         self.log("─" * 52)
         self.log("scrcpy 已退出（返回码 %s）" % proc.returncode)
+        if proc.returncode not in (0, None):
+            self._explain_scrcpy_failure("\n".join(collected))
         self.log_queue.put("__MIRROR_END__")
+
+    def _explain_scrcpy_failure(self, output):
+        """把常见的"环境问题"翻译成能直接照做的中文提示。"""
+        low = output.lower()
+        # ① 缺 OpenGL / Mesa 驱动（虚拟机最常见）
+        if ("mesa-loader" in low or "libgl error" in low
+                or "failed to load driver" in low or "glx" in low and "error" in low):
+            self.log("")
+            self.log("！ 画面没能显示：系统缺少 OpenGL 驱动（上面 libGL error 那段）")
+            self.log("   在 Debian / Ubuntu 上执行（需要一次管理员密码）：")
+            self.log("       sudo apt update && sudo apt install -y libgl1-mesa-dri mesa-utils")
+            self.log("   验证：glxinfo -B | head -3   （应显示 renderer 与版本）")
+            self.log("   如果是在虚拟机里：还要在虚拟机设置中勾选「3D 加速」；")
+            self.log("   实在没有 3D 时，可在「额外参数」里填 --render-driver=software 试试。")
+            self.log("   注意：这是**宿主系统**缺少显卡驱动，与程序本身无关。")
+            return
+        # ② 拔线 / 设备掉线
+        if "device" in low and ("not found" in low or "disconnected" in low):
+            self.log("")
+            self.log("！ 设备连接中断：请确认手机还插着、且已授权调试。")
+            self.log("   无线连接时还要确认手机与电脑在同一网段、手机没锁屏休眠。")
+            return
+        # ③ 分辨率/编码不支持
+        if "could not" in low and ("codec" in low or "encoder" in low):
+            self.log("")
+            self.log("！ 手机不支持当前的编码方式：在「额外参数」里换个编码试试，")
+            self.log("   例如：--video-codec=h265  或降低「最大分辨率」到 1024。")
+            return
 
     def _on_mirror_end(self):
         self._mirroring = False
