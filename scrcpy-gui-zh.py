@@ -26,6 +26,7 @@ scrcpy 中文图形界面 (scrcpy GUI - Chinese)
 
 import base64
 import os
+import platform
 import queue
 import secrets
 import shlex
@@ -36,7 +37,7 @@ import threading
 import time
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 APP_TITLE = "scrcpy 手机投屏"
 IS_WIN = os.name == "nt"
@@ -192,6 +193,19 @@ SCRCPY = find_exe(
     "scrcpy",
     ("/usr/bin/scrcpy", "/usr/local/bin/scrcpy", "/snap/bin/scrcpy"),
 )
+
+
+def _open_folder(path):
+    """在文件管理器里打开目录（失败就算了，不影响主流程）。"""
+    try:
+        if IS_WIN:
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def run(cmd, timeout=25):
@@ -1276,6 +1290,8 @@ class ScrcpyGui:
                                    state="disabled")
         self.btn_stop.pack(side="left", padx=8)
         ttk.Button(bar, text="清空日志", command=self.clear_log).pack(side="left")
+        ttk.Button(bar, text="导出日志",
+                   command=self.export_log).pack(side="left", padx=8)
 
         # 日志
         logf = ttk.LabelFrame(parent, text=" 运行日志 ", padding=6)
@@ -1579,6 +1595,69 @@ class ScrcpyGui:
         self.txt_log.configure(state="normal")
         self.txt_log.delete("1.0", "end")
         self.txt_log.configure(state="disabled")
+
+    def _env_report(self):
+        """环境信息：让导出的日志本身就是一份可用的报错报告。"""
+        lines = []
+        lines.append("=" * 60)
+        lines.append(" scrcpy 手机投屏 · 运行日志")
+        lines.append("=" * 60)
+        lines.append("导出时间   : %s" % time.strftime("%Y-%m-%d %H:%M:%S"))
+        lines.append("程序版本   : %s" % APP_VER)
+        lines.append("运行方式   : %s" % ("单文件打包" if getattr(sys, "frozen", False)
+                                          else "源码运行"))
+        lines.append("操作系统   : %s" % platform.platform())
+        lines.append("Python     : %s" % sys.version.split()[0])
+        lines.append("机器架构   : %s" % platform.machine())
+        lines.append("scrcpy     : %s" % (SCRCPY or "未找到"))
+        lines.append("scrcpy 版本: %s" % (scrcpy_version() or "未知"))
+        lines.append("adb        : %s" % (ADB or "未找到"))
+        rc, adbout = run([ADB, "version"]) if ADB else (1, "")
+        lines.append("adb 版本   : %s" % (adbout.strip().splitlines()[0]
+                                          if adbout.strip() else "未知"))
+        lines.append("DISPLAY    : %s" % os.environ.get("DISPLAY", "(空)"))
+        lines.append("WAYLAND    : %s" % os.environ.get("WAYLAND_DISPLAY", "(空)"))
+        lines.append("软件渲染   : %s" % ("已强制开启" if _FORCE_SOFTWARE_GL else "否"))
+        lines.append("-" * 60)
+        lines.append("")
+        return "\n".join(lines)
+
+    def export_log(self):
+        """把运行日志 + 环境信息导出成 txt。"""
+        try:
+            body = self.txt_log.get("1.0", "end").rstrip()
+        except Exception:  # noqa: BLE001
+            body = ""
+        if not body.strip():
+            messagebox.showinfo(APP_TITLE, "日志还是空的。\n\n先投屏一次，或点「刷新设备」，"
+                                           "再导出。")
+            return
+        default_dir = os.path.expanduser("~")
+        default_name = "scrcpy-gui-日志-%s.txt" % time.strftime("%Y%m%d-%H%M%S")
+        try:
+            path = filedialog.asksaveasfilename(
+                title="导出运行日志",
+                initialdir=default_dir,
+                initialfile=default_name,
+                defaultextension=".txt",
+                filetypes=[("文本文件", "*.txt"), ("全部文件", "*.*")],
+            )
+        except Exception:  # noqa: BLE001
+            path = os.path.join(default_dir, default_name)
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(self._env_report())
+                fh.write(body)
+                fh.write("\n")
+        except OSError as exc:
+            messagebox.showerror(APP_TITLE, "导出失败：%s" % exc)
+            return
+        self.log("日志已导出：%s" % path)
+        if messagebox.askyesno(APP_TITLE,
+                               "日志已导出到：\n%s\n\n要打开它所在的文件夹吗？" % path):
+            _open_folder(os.path.dirname(path))
 
     def _set_status(self, text):
         self.status.configure(text=text)
