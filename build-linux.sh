@@ -605,9 +605,19 @@ if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
     fi
 fi
 if [ -z "$ADB_BIN" ]; then
+    # x86_64 上最快的路是 Google 官方 platform-tools（自带最新 adb + 无线配对），
+    # 官方只提供 Linux x86_64 版，所以其它架构跳过这步、走归档
+    if platform_tools_available_for_arch; then
+        info "系统里没有 adb，先试 Google 官方 platform-tools（含最新 adb）…"
+        if fetch_platform_tools "$SCRIPT_DIR/vendor/platform-tools"; then
+            ADB_BIN="$SCRIPT_DIR/vendor/platform-tools/adb"
+        fi
+    fi
+fi
+if [ -z "$ADB_BIN" ]; then
     # 有些发行版根本不打包 adb（RHEL 系 / Arch 系常见），这时从 Debian/Ubuntu
     # 归档取本架构的 adb —— 它自带的依赖很少，多数 glibc 系统都能跑
-    warn "系统里没有 adb（RHEL / Arch 等发行版常常不打包它）"
+    warn "系统里没有可用的 adb（发行版没打包，或官方包没拿到）"
     info "尝试从 Debian/Ubuntu 归档取本架构的 adb…"
     if download_prebuilt_adb "$SCRIPT_DIR/vendor/platform-tools"; then
         ADB_BIN="$SCRIPT_DIR/vendor/platform-tools/adb"

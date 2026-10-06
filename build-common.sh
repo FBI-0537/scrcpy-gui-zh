@@ -415,7 +415,21 @@ install_keys() {
     if [ "${#names[@]}" -eq 0 ]; then
         return 1
     fi
-    pkg_install "${names[@]}"
+    # ⚠️ 必须**逐个包**安装：apt/dnf 只要有一个包找不到，**整条命令就会失败**，
+    # 会把同一批里本来可用的包一起连累。
+    # 实测：Debian 12 没有 scrcpy，于是 `apt-get install adb scrcpy` 整体失败，
+    # 连本来有的 adb 也没装上。
+    local n rc=0
+    for n in "${names[@]}"; do
+        if pkg_is_installed "$n"; then
+            continue
+        fi
+        if ! pkg_install "$n"; then
+            warn "  装不上：$n（继续装其余的）"
+            rc=1
+        fi
+    done
+    return "$rc"
 }
 
 # 尽力安装：失败也不退出，返回 0（由调用方自己重新检测装上了没有）
@@ -682,7 +696,7 @@ platform_tools_available_for_arch() {
 # 只取最新版会直接失败，取最旧版又拿不到无线配对能力。
 download_prebuilt_adb() {
     local dest="$1"
-    local arch base index candidates v url tmp deb out
+    local arch base index all v url tmp deb out
     arch="$(deb_arch)"
     if [ -z "$arch" ]; then
         warn "  · 未知架构 $(uname -m)，无法从归档取 adb"
@@ -690,28 +704,34 @@ download_prebuilt_adb() {
     fi
     command -v curl >/dev/null 2>&1 || return 1
 
-    candidates=""
+    # 两个归档都要查 —— 它们提供的 adb 版本和对 glibc 的要求不同，
+    # 只查到第一个就收手会漏掉真正能跑的那个：
+    #   Ubuntu 的 34.0.5-12build1 需要 glibc 2.39+（bookworm 只有 2.36，跑不了）
+    #   Debian backports 的 34.0.5-12~bpo12+1 正好是 glibc 2.36 ✅
+    # 候选记成「版本<TAB>下载基址」，最后按版本从新到旧统一排序。
+    all=""
     for base in "http://archive.ubuntu.com/ubuntu/pool/universe/a/android-platform-tools" \
                 "http://deb.debian.org/debian/pool/main/a/android-platform-tools"; do
         index="$(curl -fsSL --max-time 25 "$base/" 2>/dev/null || true)"
         if [ -n "$index" ]; then
-            candidates="$(printf '%s\n' "$index" \
+            all="$all$(printf '%s\n' "$index" \
                 | sed -n "s/.*href=\"adb_\([0-9][^\"]*\)_${arch}\.deb\".*/\1/p" \
-                | sort -Vr)"
-        fi
-        if [ -n "$candidates" ]; then
-            break
+                | sort -Vr | sed "s|\$|\t$base|")
+"
         fi
     done
-    if [ -z "$candidates" ]; then
+    all="$(printf '%s\n' "$all" | grep -v '^[[:space:]]*$' | sort -Vr -k1,1 || true)"
+    if [ -z "$all" ]; then
         warn "  · 归档里没有 $arch 架构的 adb 包"
         return 1
     fi
-    info "  · $arch 候选版本（新→旧）：$(printf '%s' "$candidates" | tr '\n' ' ')"
+    info "  · $arch 候选版本（新→旧，共 $(printf '%s\n' "$all" | wc -l) 个）：$(printf '%s\n' "$all" | cut -f1 | sed -n '1,10p' | tr '\n' ' ')"
 
     tmp="$(mktemp -d 2>/dev/null || printf '%s' "${dest}.tmp")"
     mkdir -p "$tmp"
-    for v in $candidates; do
+    while IFS="$(printf '\t')" read -r v base; do
+        [ -n "$v" ] || continue
+        [ -n "$base" ] || continue
         url="$base/adb_${v}_${arch}.deb"
         deb="$tmp/adb.deb"
         rm -rf "$tmp/root" "$deb"
@@ -742,14 +762,18 @@ download_prebuilt_adb() {
         mkdir -p "$dest"
         cp -L "$tmp/root/usr/bin/adb" "$dest/adb"
         chmod 0755 "$dest/adb"
+        # 关键：**实际跑一次**才算数。跑不起来通常是 glibc 不够新，
+        # 也可能缺 libc++1 / libusb-1.0-0 这类运行库（一并装上再试）。
         if out="$("$dest/adb" --version 2>&1)"; then
             info "  · adb $v 可用：$(adb_version_text "$dest/adb")"
             rm -rf "$tmp"
             return 0
         fi
-        warn "  · adb $v 在本机跑不起来（多半 glibc 不够新），试下一个"
+        warn "  · adb $v 在本机跑不起来（多半 glibc 不够新或缺运行库），试下一个"
         rm -f "$dest/adb"
-    done
+    done <<EOF
+$all
+EOF
     rm -rf "$tmp"
     warn "  · 所有候选版本都跑不起来"
     return 1
