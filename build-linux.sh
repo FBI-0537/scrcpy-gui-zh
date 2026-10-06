@@ -180,6 +180,15 @@ github_latest_tag() {
         | sed -n '1p' || true
 }
 
+# 取最近 N 个 scrcpy 版本号（新→旧）。用于「从新到旧试到能编为止」
+github_release_versions() {
+    local n="${1:-12}"
+    curl -fsSL --max-time 25 \
+        "https://api.github.com/repos/Genymobile/scrcpy/releases?per_page=${n}" 2>/dev/null \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\?\([0-9][^"]*\)".*/\1/p' \
+        | sed -n "1,${n}p" || true
+}
+
 find_first() {
     local p
     for p in "$@"; do
@@ -193,20 +202,12 @@ find_first() {
 
 # 从源码编译 scrcpy 到项目 vendor/scrcpy
 build_scrcpy_from_source() {
-    local ver="$SCRCPY_VERSION" tarball src server_url sdlver sdlurl
+    local ver="" tarball src sdlver sdlurl
 
     mkdir -p "$VENDOR_DIR"
 
-    if [ -z "$ver" ]; then
-        info "查询 scrcpy 最新版本…"
-        ver="$(github_latest_tag https://api.github.com/repos/Genymobile/scrcpy/releases/latest)"
-        ver="${ver#v}"
-    fi
-    if [ -z "$ver" ]; then
-        die "无法确定 scrcpy 版本（多半是网络 / 系统代理问题）。可手动指定：
-     ./build-linux.sh --auto-scrcpy --scrcpy-version 4.1"
-    fi
-    info "目标版本：v$ver"
+    # 版本不在这里定：scrcpy 的 FFmpeg 要求随版本提高，必须等 SDL3 装好之后
+    # 从新到旧试着配置，用第一个能通过的（见下面「选一个本机依赖能满足的版本」）。
 
     info "安装编译依赖（已有的会跳过）…"
     install_keys_optional meson ninja pkgconfig cmake gcc gxx make tar \
@@ -258,47 +259,84 @@ build_scrcpy_from_source() {
     export PKG_CONFIG_PATH="$VENDOR_SDL3/lib/pkgconfig:$VENDOR_SDL3/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
     export LD_LIBRARY_PATH="$VENDOR_LIB_DIRS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-    info "下载 scrcpy-server v$ver…"
-    server_url="https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-server-v$ver"
-    curl -fL --retry 2 --max-time 600 -o "$VENDOR_SERVER" "$server_url" \
-        || die "scrcpy-server 下载失败：$server_url"
+    # ---- 选一个「本机依赖能满足」的 scrcpy 版本 ----
+    #
+    # scrcpy 对 FFmpeg 的要求随版本提高：
+    #   scrcpy 5.0 需要 libavformat ≥ 60.3（FFmpeg 6.3+）
+    #   而 Debian 12 只有 FFmpeg 5.1（libavformat 59.27），Debian 11 更低
+    # 固定取「最新版」必然失败，所以**从新到旧逐个试**，用第一个
+    # meson setup 能通过的版本。
+    # 注意 scrcpy-server 的版本必须与客户端一致，所以每试一个版本就先下
+    # 对应版本的 server（只有几百 KB），配置成功后才正式采用。
+    if [ -n "$SCRCPY_VERSION" ]; then
+        CANDS="$SCRCPY_VERSION"
+    else
+        info "查询可用的 scrcpy 版本列表…"
+        CANDS="$(github_release_versions 12)"
+    fi
+    if [ -z "$CANDS" ]; then
+        die "无法从 GitHub 取到 scrcpy 版本列表（网络问题？可手动指定 --scrcpy-version 3.1）
+     原始接口：https://api.github.com/repos/Genymobile/scrcpy/releases"
+    fi
 
-    info "下载 scrcpy v$ver 源码…"
-    tarball="$VENDOR_DIR/scrcpy-$ver.tar.gz"
-    src="$VENDOR_DIR/scrcpy-src"
-    curl -fL --retry 2 --max-time 600 -o "$tarball" \
-        "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.gz" \
-        || die "scrcpy 源码下载失败（确认 v$ver 存在）"
-    rm -rf "$src"
-    mkdir -p "$src"
-    tar -xzf "$tarball" -C "$src" --strip-components=1 || die "scrcpy 源码解压失败"
-    rm -f "$tarball"
+    GOT_VER=""
+    GOT_TPL=""
+    for ver in $CANDS; do
+        info "试 scrcpy v$ver …"
+        tarball="$VENDOR_DIR/scrcpy-$ver.tar.gz"
+        src="$VENDOR_DIR/scrcpy-src"
+        cand_server="$VENDOR_DIR/scrcpy-server-$ver"
+        rm -rf "$src" "$tarball" "$cand_server" "$VENDOR_DIR/meson-setup.log"
 
-    info "配置并编译（几分钟）…"
-    # Rocky/Alma 8 自带的 meson 只有 0.49，够不上 scrcpy 要求的 ≥ 0.60；
-    # 发行版源里也没有更新的，所以用 pip 往构建虚拟环境里装一份并加进 PATH
-    MESON_HAVE="$(version_of meson)"
-    if [ -z "$MESON_HAVE" ] || ! ver_ge "$MESON_HAVE" "$MIN_MESON"; then
-        warn "系统 meson 版本 ${MESON_HAVE:-未安装} 低于 $MIN_MESON，用 pip 装一份到构建环境"
-        if [ -x "${VPY:-}" ]; then
-            "$VPY" -m pip install --timeout 90 --retries 10 --quiet --upgrade meson ninja \
-                || warn "pip 安装 meson/ninja 失败，继续用系统的试试"
-            export PATH="$(dirname "$VPY"):$PATH"
-            info "meson 现在是：$(version_of meson)"
-        else
-            warn "找不到构建虚拟环境（VPY 未设置），无法用 pip 补装 meson"
+        # 源码：用 releases 里的 tarball（比 archive/refs 更稳）
+        if ! curl -fL --retry 2 --max-time 600 -o "$tarball" \
+                "https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-v$ver.tar.gz" 2>/dev/null; then
+            warn "  · v$ver 源码下载失败，试下一个"
+            continue
         fi
+        mkdir -p "$src"
+        if ! tar -xzf "$tarball" -C "$src" --strip-components=1 2>/dev/null; then
+            warn "  · v$ver 解压失败，试下一个"
+            rm -rf "$src" "$tarball"
+            continue
+        fi
+        rm -f "$tarball"
+
+        # 同版本 server（meson 靠它把 scrcpy-server 装进目标树）
+        if ! curl -fL --retry 2 --max-time 600 -o "$cand_server" \
+                "https://github.com/Genymobile/scrcpy/releases/download/v$ver/scrcpy-server-v$ver" 2>/dev/null; then
+            warn "  · v$ver 的 scrcpy-server 下载失败，试下一个"
+            rm -rf "$src"
+            continue
+        fi
+
+        if ( cd "$src" && meson setup build --buildtype=release \
+                --prefix="$VENDOR_SCRCPY" \
+                -Dprebuilt_server="$cand_server" ) > "$VENDOR_DIR/meson-setup.log" 2>&1; then
+            info "  · v$ver 依赖满足，用它来编译"
+            GOT_VER="$ver"
+            GOT_TPL="$src"
+            break
+        fi
+        warn "  · v$ver 配置不通过（多半本机 FFmpeg 太旧）："
+        grep -E 'ERROR:|need ' "$VENDOR_DIR/meson-setup.log" 2>/dev/null \
+            | sed -n '1,3p' | while IFS= read -r l; do warn "      $l"; done
+        rm -rf "$src" "$cand_server"
+    done
+
+    if [ -z "$GOT_VER" ]; then
+        die "试遍了候选版本都配置不通过。最后一个版本的报错在：
+     $VENDOR_DIR/meson-setup.log
+     可以手动指定一个更老的版本重试：--scrcpy-version 3.1"
     fi
-    rm -rf "$src/build"
-    if ! ( cd "$src" && meson setup build --buildtype=release \
-            --prefix="$VENDOR_SCRCPY" -Dprebuilt_server="$VENDOR_SERVER" ); then
-        die "meson setup 失败。常见原因：
-     · 缺少 sdl3（本脚本应已自动处理）
-     · meson 版本太旧 → pipx install meson 后重试"
-    fi
-    ninja -C "$src/build" || die "scrcpy 编译失败"
-    ninja -C "$src/build" install || die "scrcpy 安装失败"
-    rm -rf "$src"
+
+    # 采用这个版本的 server：版本必须与客户端一致
+    mv -f "$VENDOR_DIR/scrcpy-server-$GOT_VER" "$VENDOR_SERVER"
+
+    info "编译 scrcpy v$GOT_VER（几分钟）…"
+    ninja -C "$GOT_TPL/build" || die "scrcpy 编译失败"
+    ninja -C "$GOT_TPL/build" install || die "scrcpy 安装失败"
+    rm -rf "$GOT_TPL"
 
     if [ ! -x "$VENDOR_SCRCPY/bin/scrcpy" ]; then
         die "编译流程结束，但没找到 $VENDOR_SCRCPY/bin/scrcpy，请把上面的输出发出来"
