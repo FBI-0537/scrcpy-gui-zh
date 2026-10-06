@@ -40,6 +40,9 @@ import tkinter.font as tkfont
 from tkinter import ttk, messagebox, filedialog
 
 APP_TITLE = "scrcpy 手机投屏"
+# 版本号：与 build-linux.sh / build-windows.ps1 里的 APP_VER 默认值保持一致。
+# 打包时若设置了同名环境变量，以环境变量为准。
+APP_VER = os.environ.get("APP_VER") or "1.0.0"
 IS_WIN = os.name == "nt"
 APP_SUB = ("中文图形界面 · Windows / Linux 通用" if IS_WIN
            else "中文图形界面 · amd64 / arm64 通用")
@@ -1597,7 +1600,18 @@ class ScrcpyGui:
         self.txt_log.configure(state="disabled")
 
     def _env_report(self):
-        """环境信息：让导出的日志本身就是一份可用的报错报告。"""
+        """环境信息：让导出的日志本身就是一份可用的报错报告。
+
+        整段包兜底：**收集环境信息绝不能影响导出日志** —— 用户往往是在出问题时
+        才导出，这时候任何一个探测失败都会让"救命功能"失效。
+        """
+        try:
+            return self._env_report_inner()
+        except Exception as exc:  # noqa: BLE001
+            return ("(环境信息收集失败：%s)\n"
+                    "下面只有运行日志，也够定位大部分问题。\n\n" % exc)
+
+    def _env_report_inner(self):
         lines = []
         lines.append("=" * 60)
         lines.append(" scrcpy 手机投屏 · 运行日志")
@@ -1613,8 +1627,9 @@ class ScrcpyGui:
         lines.append("scrcpy 版本: %s" % (scrcpy_version() or "未知"))
         lines.append("adb        : %s" % (ADB or "未找到"))
         rc, adbout = run([ADB, "version"]) if ADB else (1, "")
-        lines.append("adb 版本   : %s" % (adbout.strip().splitlines()[0]
-                                          if adbout.strip() else "未知"))
+        adb_lines = [x.strip() for x in adbout.strip().splitlines() if x.strip()]
+        lines.append("adb 版本   : %s" % (" | ".join(adb_lines[:2])
+                                          if adb_lines else "未知"))
         lines.append("DISPLAY    : %s" % os.environ.get("DISPLAY", "(空)"))
         lines.append("WAYLAND    : %s" % os.environ.get("WAYLAND_DISPLAY", "(空)"))
         lines.append("软件渲染   : %s" % ("已强制开启" if _FORCE_SOFTWARE_GL else "否"))
