@@ -621,7 +621,16 @@ if [ -z "$PY_VER" ] || ! ver_ge "$PY_VER" "$MIN_PYTHON"; then
     MISSING_DESC=("python3 版本过低（${PY_VER:-未知} < $MIN_PYTHON）")
     ensure_deps
 fi
-chk_ok "python3" "$(version_of python3)（要求 ≥ $MIN_PYTHON）"
+# 明确失败，而不是闷头用老 Python 往下走（否则会在打包阶段报难懂的错）
+_pyver="$(version_of python3)"
+if [ -z "$_pyver" ] || ! ver_ge "$_pyver" "$MIN_PYTHON"; then
+    die "python3 版本仍然不满足要求：${_pyver:-未知} < $MIN_PYTHON
+     本机的 python3 太旧，且自动安装新版失败（上面的 dnf 输出里有原因）。
+     Rocky/RHEL 8 可以手动执行：
+       sudo dnf -y install python3.11 python3.11-devel python3.11-tkinter
+     然后重新运行本脚本（脚本会自动把 python3 指向 3.11）。"
+fi
+chk_ok "python3" "$_pyver（要求 ≥ $MIN_PYTHON）"
 
 # 只有真要源码编译 scrcpy 时，才强制要求编译工具链
 if [ "$AUTO_SCRCPY" -eq 1 ]; then

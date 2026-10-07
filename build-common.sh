@@ -775,15 +775,24 @@ ensure_modern_python() {
         fi
     done
     info "  · 没找到，尝试安装一份…"
-    # RHEL 8 里 python3.11 / python3.9 是 module，必须先 enable 再装
+    # 注意：**不要把输出丢掉** —— 装不上时必须能看见原因（包名/模块名在
+    # RHEL 8 上很不统一：python3.11 是 module，tkinter 子包名也各不同）。
     if [ "$DISTRO_FAMILY" = "rhel" ] && command -v dnf >/dev/null 2>&1; then
-        for _m in python311 python39; do
-            dnf module enable -y "$_m" >/dev/null 2>&1 || true
-            dnf module install -y "$_m" >/dev/null 2>&1 || true
-            install_keys_optional "$_m" >/dev/null 2>&1 || true
+        for _pkg in "python3.11 python3.11-devel python3.11-tkinter" \
+                    "python3.9 python3.9-devel python3.9-tkinter"; do
+            info "    · dnf install $_pkg"
+            # shellcheck disable=SC2086
+            dnf -y install $_pkg 2>&1 | sed -n '1,8p' || true
         done
+        for _mod in python311 python39; do
+            info "    · dnf module install $_mod"
+            dnf -y module install "$_mod" 2>&1 | sed -n '1,8p' || true
+        done
+        # 有些镜像里 tkinter 是单独的名字
+        dnf -y install python311-tkinter python39-tkinter 2>&1 | sed -n '1,5p' || true
     fi
-    install_keys_optional python311 || install_keys_optional python39 || true
+    install_keys_optional python311 || true
+    install_keys_optional python39 || true
     for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
         if command -v "$cand" >/dev/null 2>&1; then
             v="$(version_of "$cand")"
@@ -798,6 +807,12 @@ ensure_modern_python() {
     done
     warn "  仍然没有 >= $MIN_PYTHON 的 python3，后面的打包步骤可能失败"
     return 1
+}
+
+
+# 选定的 python3 是否能用 tkinter（PyInstaller 打包 Tk 界面必需）
+python3_has_tk() {
+    python3 -c "import tkinter" >/dev/null 2>&1
 }
 
 # 现代 scrcpy 要求 FFmpeg >= 4.3（用到 libavcodec/packet.h）。
