@@ -1,4 +1,17 @@
 ### 新增
+- **每个架构明确分两档，档位写进产物名**：`<app>-<ver>-linux-glibc<ver>-<arch>-<full|basic>`
+  * `-full`：内嵌 adb ≥ 30，**有**配对码 / 二维码
+  * `-basic`：内嵌 adb 太旧，这两个功能在界面上不显示（界面会写明原因与替代方案），
+    换取更低的 glibc 下限、更大的兼容面
+  档位由构建时**实际内嵌的 adb 版本**自动判定，不硬编码。
+  * x86_64：一份 `-full` 即兼得（Google 官方 platform-tools 是 x86_64，adb 37 在
+    glibc 2.31 上就能跑）
+  * aarch64 / armv7l：各两份 —— `glibc2.36-*-full`（adb 34）与
+    `glibc2.31-*-basic`（adb 28）
+- 矩阵精简为 5 个目标：去掉 `ubuntu:22.04 amd64`（x86_64 已被 2.31 覆盖）与
+  `ubuntu:22.04 arm64`（与 2.31 的 aarch64 功能相同但兼容面更窄）。
+
+### 新增
 - **矩阵加入 `ubuntu:20.04` 的 arm/v7 档（glibc 2.31）**：给 Ubuntu 20.04 系
   的 32 位 ARM 设备（如 RK3566 开源掌机 dArkOS）用。ARM 32 位现在有两档：
   glibc2.31（老设备）与 glibc2.36（树莓派 OS Bookworm 32 位等新设备）。

@@ -1025,13 +1025,24 @@ step "4/6 打包成单文件可执行程序（约 1-3 分钟）"
 info "使用虚拟环境：$VPY"
 info "使用 PyInstaller：$("$VPY" -m PyInstaller --version 2>/dev/null)"
 
-OUT="$DIST_DIR/$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG"
+# 功能档位：按**实际内嵌的 adb**判定，不硬编码。
+#   full  —— 内嵌 adb >= 30，配对码 / 二维码可用
+#   basic —— 内嵌 adb 太旧，这两个功能在界面上不显示（更兼容的档位）
+if [ "$ADB_MDNS" -eq 1 ]; then
+    FEATURE_TAG="full"
+else
+    FEATURE_TAG="basic"
+fi
+ARTIFACT_NAME="$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG-$FEATURE_TAG"
+info "功能档位：$FEATURE_TAG（内嵌 adb $(adb_version_text "$ADB_BIN")）"
+
+OUT="$DIST_DIR/$ARTIFACT_NAME"
 rm -f "$OUT"
 rm -rf "$BUILD_ROOT/pyiwork" "$BUILD_ROOT/pyispec"
 
 PYI_ARGS=(
     --noconfirm --clean --onefile
-    --name "$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG"
+    --name "$ARTIFACT_NAME"
     --distpath "$DIST_DIR"
     --workpath "$BUILD_ROOT/pyiwork"
     --specpath "$BUILD_ROOT/pyispec"
@@ -1106,6 +1117,8 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
     printf '%s\n' " scrcpy 中文 GUI —— 功能与兼容性说明"
     printf '%s\n' "=============================================================="
     printf '产物文件  ：%s\n' "$BASE_OUT"
+    printf '功能档位  ：%s（%s）\n' "$FEATURE_TAG" \
+        "$([ "$FEATURE_TAG" = full ] && printf '全功能：含无线配对码/二维码' || printf '最兼容：不含无线配对码/二维码，换取更低 glibc')"
     printf '构建镜像  ：%s\n' "$DISTRO_NAME"
     printf '生成时间  ：%s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
     printf '\n【运行要求】\n'

@@ -54,14 +54,12 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
           fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
-                                                  full='{"include":[
-            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:22.04","platform":"linux/amd64","label":"glibc2.35-x86_64","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"ubuntu:22.04","platform":"linux/arm64","label":"glibc2.35-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l","extra":"--auto-scrcpy --allow-old-adb"}
+                                                            full='{"include":[
+            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"},
+            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy --allow-old-adb"}
           ]}'
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
@@ -292,17 +290,15 @@ jobs:
             adb 要求较新的 glibc，**所以 glibc2.31 的 ARM 产物只能用 adb 28，这两个
             功能在物理上不可用** —— 程序会直接不显示它们，并在界面上写明原因。
 
-            | 产物 | 内嵌 adb | USB 直连 | 方式一 USB 转无线 | **配对码** | **二维码** |
-|---|---|---|---|---|---|
-| `glibc2.31-x86_64` | 37（Google 官方） | 支持 | 支持 | **支持** | **支持** |
-| `glibc2.35-x86_64` | 37（Google 官方） | 支持 | 支持 | **支持** | **支持** |
-| `glibc2.36-aarch64` | 34 | 支持 | 支持 | **支持** | **支持** |
-| `glibc2.36-armv7l` | 34 | 支持 | 支持 | **支持** | **支持** |
-| `glibc2.31-aarch64` | 28 | 支持 | 支持 | **不支持** | **不支持** |
-| `glibc2.35-aarch64` | 28 | 支持 | 支持 | **不支持** | **不支持** |
-| `glibc2.31-armv7l` | 28 | 支持 | 支持 | **不支持** | **不支持** |
+            | 产物 | 内嵌 adb | 定位 | USB 直连 | 方式一 USB 转无线 | **配对码** | **二维码** |
+|---|---|---|---|---|---|---|
+| `…-glibc2.31-x86_64-full` | 37（Google 官方） | **全功能 + 最兼容（一份兼得）** | 支持 | 支持 | **支持** | **支持** |
+| `…-glibc2.36-aarch64-full` | 34 | ARM64 全功能 | 支持 | 支持 | **支持** | **支持** |
+| `…-glibc2.36-armv7l-full` | 34 | ARM32 全功能 | 支持 | 支持 | **支持** | **支持** |
+| `…-glibc2.31-aarch64-basic` | 28 | ARM64 最兼容 | 支持 | 支持 | **不支持** | **不支持** |
+| `…-glibc2.31-armv7l-basic` | 28 | ARM32 最兼容 | 支持 | 支持 | **不支持** | **不支持** |
 
-            **为什么 ARM 上分两档**：Google 官方 platform-tools 只提供 x86_64；ARM 只能取 Debian/Ubuntu 归档的 adb，而带 `adb pair` 的版本要求 glibc ≥ 2.36 —— 所以 glibc2.31 / 2.35 的 **ARM** 产物只能是 adb 28，glibc2.36 的 ARM 产物才有 adb 34。
+            **为什么分两档**：配对码/二维码需要内嵌 adb ≥ 30，而 ARM 上能取的 adb 受构建环境 glibc 限制。x86_64 能兼得（Google 官方 platform-tools 就是 x86_64，adb 37 在 glibc 2.31 就能跑）；ARM 必须分两份 —— `glibc2.36-*-full` 带 adb 34 有配对，`glibc2.31-*-basic` 只能带 adb 28、没有配对（界面会直接不显示这两个功能），但 glibc 下限更低。
 
 没有配对码怎么办：先用 USB 插一次走「方式一：USB 转无线」；或在一台有新版
             adb 的电脑上配对成功后，把 `~/.android/adbkey` 与 `adbkey.pub` 拷到目标机
