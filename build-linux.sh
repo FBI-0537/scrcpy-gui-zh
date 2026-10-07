@@ -81,7 +81,8 @@ VENDOR_DIR="$SCRIPT_DIR/vendor"
 VENDOR_SCRCPY="$VENDOR_DIR/scrcpy"
 VENDOR_SDL3="$VENDOR_DIR/sdl3"
 VENDOR_SERVER="$VENDOR_DIR/scrcpy-server"
-VENDOR_LIB_DIRS="$VENDOR_SDL3/lib:$VENDOR_SCRCPY/lib"
+VENDOR_FFMPEG="$VENDOR_DIR/ffmpeg"
+VENDOR_LIB_DIRS="$VENDOR_FFMPEG/lib:$VENDOR_SDL3/lib:$VENDOR_SCRCPY/lib"
 
 # 不能打进包的库：glibc 全家桶 + 显卡驱动栈（必须用宿主机的）
 EXCLUDE_RE='^(ld-linux.*|libc\.so.*|libc-[0-9].*|libpthread.*|libdl\.so.*|libm\.so.*|librt\.so.*|libresolv.*|libnss_.*|libGL.*|libEGL.*|libGLX.*|libGLdispatch.*|libOpenGL.*|libdrm.*|libgbm.*|libvulkan.*)$'
@@ -248,6 +249,8 @@ build_scrcpy_from_source() {
     # 再试试能不能拿到更新的 FFmpeg：scrcpy 3.1+ 需要 libavformat ≥ 60，
     # 而 Debian 12 主仓只有 59.27。拿到新库 -> 可以编最新版 scrcpy。
     upgrade_ffmpeg_dev || true
+    # 还是不够新（老发行版自带 FFmpeg <= 4.1、backports 也没有）就自己编一份
+    ensure_modern_ffmpeg || warn "FFmpeg 仍不够新，scrcpy 可能只能退到很老的版本"
 
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "系统里没有 SDL3，先尝试发行版包…"
@@ -332,7 +335,8 @@ build_scrcpy_from_source() {
         info "SDL3 已装到 $VENDOR_SDL3"
     fi
 
-    export PKG_CONFIG_PATH="$VENDOR_SDL3/lib/pkgconfig:$VENDOR_SDL3/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export PKG_CONFIG_PATH="$VENDOR_FFMPEG/lib/pkgconfig:$VENDOR_FFMPEG/lib64/pkgconfig:$VENDOR_SDL3/lib/pkgconfig:$VENDOR_SDL3/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export LD_LIBRARY_PATH="$VENDOR_FFMPEG/lib:$VENDOR_FFMPEG/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export LD_LIBRARY_PATH="$VENDOR_LIB_DIRS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
     # ---- 选一个「本机依赖能满足」的 scrcpy 版本 ----
@@ -596,6 +600,9 @@ fi
 
 [ -f "$GUI_PY" ]   || die "找不到界面脚本：$GUI_PY"
 [ -f "$UDEV_SRC" ] || die "找不到 udev 安装脚本：$UDEV_SRC"
+
+# 老发行版（Rocky 8 = python3.6）先换用发行版提供的新版 python3
+ensure_modern_python || true
 
 info "python3：$(python3 --version 2>&1)"
 

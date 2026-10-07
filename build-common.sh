@@ -193,6 +193,32 @@ pkg_name_for_key() {
                 suse)   printf 'libusb-1_0-devel\n' ;;
                 alpine) printf 'libusb-dev\n' ;;
             esac ;;
+        # 老发行版（Rocky 8 = python3.6）要额外装的新版 python
+        python311)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'python3.11\npython3.11-venv\npython3.11-dev\n' ;;
+                rhel)   printf 'python3.11\npython3.11-devel\npython3.11-tkinter\n' ;;
+                suse)   printf 'python311\npython311-devel\n' ;;
+                arch)   printf 'python\n' ;;
+                alpine) printf 'python3\n' ;;
+            esac ;;
+        python39)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'python3.9\npython3.9-venv\npython3.9-dev\n' ;;
+                rhel)   printf 'python39\npython39-devel\npython39-tkinter\n' ;;
+                suse)   printf 'python39\npython39-devel\n' ;;
+                arch)   printf 'python\n' ;;
+                alpine) printf 'python3\n' ;;
+            esac ;;
+        # 源码编译 FFmpeg 需要的（nasm 供 x86 SIMD，缺了可以 --disable-x86asm）
+        ffmpeg-build-deps)
+            case "$DISTRO_FAMILY" in
+                debian) printf 'nasm\nyasm\nmake\ntar\nxz-utils\n' ;;
+                rhel)   printf 'nasm\nyasm\nmake\ntar\nxz\n' ;;
+                suse)   printf 'nasm\nyasm\nmake\ntar\nxz\n' ;;
+                arch)   printf 'nasm\nyasm\nmake\ntar\nxz\n' ;;
+                alpine) printf 'nasm\nyasm\nmake\ntar\nxz\n' ;;
+            esac ;;
         sdl2-dev)
             case "$DISTRO_FAMILY" in
                 debian) printf 'libsdl2-dev\n' ;;
@@ -706,6 +732,99 @@ host_arch() {
 # bookworm-backports 里有 FFmpeg 7.x，装上就能编最新版 scrcpy；
 # 这些库会被打进产物，所以**目标机不需要装 FFmpeg**。
 # 拿到就用，拿不到就退回系统自带的（调用方自己判断版本够不够）。
+# 老发行版自带的 python3 可能低于 3.8（Rocky 8 = 3.6），PyInstaller 6 用不了。
+# 这里优先用发行版提供的新版 python3.x，并用 /usr/local/bin/python3 顶上去，
+# 这样脚本里所有 `python3` 调用都会用到新版（/usr/local/bin 在 PATH 里更靠前）。
+ensure_modern_python() {
+    local cur cand v
+    cur="$(version_of python3)"
+    if [ -n "$cur" ] && ver_ge "$cur" "$MIN_PYTHON"; then
+        return 0
+    fi
+    info "python3 是 ${cur:-未安装}（低于 $MIN_PYTHON），找找发行版有没有更新的…"
+    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            v="$(version_of "$cand")"
+            if [ -n "$v" ] && ver_ge "$v" "$MIN_PYTHON"; then
+                info "  · 使用 $cand（$v）"
+                mkdir -p /usr/local/bin 2>/dev/null || true
+                ln -sf "$(command -v "$cand")" /usr/local/bin/python3 2>/dev/null || true
+                hash -r 2>/dev/null || true
+                return 0
+            fi
+        fi
+    done
+    info "  · 没找到，尝试安装一份…"
+    install_keys_optional python311 || install_keys_optional python39 || true
+    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            v="$(version_of "$cand")"
+            if [ -n "$v" ] && ver_ge "$v" "$MIN_PYTHON"; then
+                info "  · 装上并用 $cand（$v）"
+                mkdir -p /usr/local/bin 2>/dev/null || true
+                ln -sf "$(command -v "$cand")" /usr/local/bin/python3 2>/dev/null || true
+                hash -r 2>/dev/null || true
+                return 0
+            fi
+        fi
+    done
+    warn "  仍然没有 >= $MIN_PYTHON 的 python3，后面的打包步骤可能失败"
+    return 1
+}
+
+# 现代 scrcpy 要求 FFmpeg >= 4.3（用到 libavcodec/packet.h）。
+# 老发行版自带 FFmpeg <= 4.1，backports 也拿不到时，只能源码编译一份到
+# vendor/ffmpeg —— 这样即使构建机很老，产物里的 FFmpeg 也是新的。
+# 编出来的 .so 会被 copy_libs 一起打进产物，目标机不需要装 FFmpeg。
+ensure_modern_ffmpeg() {
+    local cur
+    # 允许调用方先设好；没设就按惯例放到 vendor/ffmpeg
+    VENDOR_FFMPEG="${VENDOR_FFMPEG:-${VENDOR_DIR:-$PWD/vendor}/ffmpeg}"
+    cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
+    if [ -n "$cur" ] && ver_ge "$cur" "59.0"; then
+        info "FFmpeg 够新（libavformat $cur），不用自编"
+        return 0
+    fi
+    info "FFmpeg 太旧（libavformat ${cur:-无}，需要 >= 59 即 FFmpeg >= 4.3），源码编译一份…"
+    install_keys_optional ffmpeg-build-deps tar make
+    command -v gcc >/dev/null 2>&1 || install_keys_optional gcc
+    local ver="6.1.2"
+    local tar="$VENDOR_DIR/ffmpeg-$ver.tar.xz"
+    local src="$VENDOR_DIR/ffmpeg-src"
+    mkdir -p "$VENDOR_DIR"
+    if [ ! -f "$tar" ]; then
+        curl -fL --retry 2 --max-time 900 -o "$tar" \
+            "https://ffmpeg.org/releases/ffmpeg-$ver.tar.xz" \
+            || { warn "FFmpeg 源码下载失败"; return 1; }
+    fi
+    rm -rf "$src"
+    mkdir -p "$src"
+    tar -xf "$tar" -C "$src" --strip-components=1 || { warn "FFmpeg 解压失败"; return 1; }
+    # 只编 scrcpy 需要的库；nasm 不在就用 --disable-x86asm（慢一点但能编）
+    local asm_flag="--disable-x86asm"
+    command -v nasm >/dev/null 2>&1 && asm_flag="--enable-x86asm"
+    if ! ( cd "$src" && ./configure --prefix="$VENDOR_FFMPEG" \
+            --enable-shared --disable-static --disable-programs --disable-doc \
+            --disable-network --disable-avfilter $asm_flag ) \
+            > "$VENDOR_DIR/ffmpeg-configure.log" 2>&1; then
+        warn "FFmpeg configure 失败，日志尾部："
+        tail -12 "$VENDOR_DIR/ffmpeg-configure.log" >&2 || true
+        return 1
+    fi
+    if ! make -C "$src" -j"$(nproc)" > "$VENDOR_DIR/ffmpeg-build.log" 2>&1; then
+        warn "FFmpeg 编译失败，日志尾部："
+        tail -12 "$VENDOR_DIR/ffmpeg-build.log" >&2 || true
+        return 1
+    fi
+    make -C "$src" install >/dev/null 2>&1 || { warn "FFmpeg 安装失败"; return 1; }
+    export PKG_CONFIG_PATH="$VENDOR_FFMPEG/lib/pkgconfig:$VENDOR_FFMPEG/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export LD_LIBRARY_PATH="$VENDOR_FFMPEG/lib:$VENDOR_FFMPEG/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
+    info "自编 FFmpeg 就绪：libavformat ${cur:-未知}（装在 $VENDOR_FFMPEG）"
+    [ -n "$cur" ]
+}
+
+
 upgrade_ffmpeg_dev() {
     case "$DISTRO_FAMILY" in
         debian) ;;
