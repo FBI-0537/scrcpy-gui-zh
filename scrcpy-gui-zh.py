@@ -213,15 +213,52 @@ SCRCPY = find_exe(
 )
 
 
+def system_env():
+    """给系统命令（pkexec / sudo / xdg-open 等）用的干净环境。
+
+    **绝不能**让它们继承产物里的 LD_LIBRARY_PATH —— 那会让它们去加载我们打包的
+    库（例如旧版 glib-2.0），直接崩：实测
+        pkexec: symbol lookup error: pkexec: undefined symbol: g_fdwalk_set_cloexec
+    在 chroot/proot 里 pkexec 不是 setuid，glibc 不会替你忽略这个变量。
+    """
+    env = os.environ.copy()
+    env.pop("LD_LIBRARY_PATH", None)
+    env.pop("LD_PRELOAD", None)
+    env.pop("LD_AUDIT", None)
+    if getattr(sys, "frozen", False):
+        base = getattr(sys, "_MEIPASS", "")
+        if base:
+            # 把产物目录从 PATH 里择出去，避免误用包内的同名命令
+            parts = [p for p in env.get("PATH", "").split(os.pathsep)
+                     if p and not p.startswith(base)]
+            env["PATH"] = os.pathsep.join(parts)
+    return env
+
+
+def run_system(cmd, timeout=120):
+    """执行系统命令（干净环境）。返回 (返回码, 输出)。"""
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True,
+                             timeout=timeout, env=system_env(), **NO_WINDOW)
+        return res.returncode, (res.stdout or "") + (res.stderr or "")
+    except FileNotFoundError:
+        return 127, "找不到命令：%s" % cmd[0]
+    except subprocess.TimeoutExpired:
+        return 124, "命令超时（%s 秒）：%s" % (timeout, " ".join(cmd))
+    except Exception as exc:  # noqa: BLE001
+        return 1, str(exc)
+
+
 def _open_folder(path):
     """在文件管理器里打开目录（失败就算了，不影响主流程）。"""
     try:
         if IS_WIN:
             os.startfile(path)  # type: ignore[attr-defined]
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", path])
+            subprocess.Popen(["open", path], env=system_env())
         else:
-            subprocess.Popen(["xdg-open", path])
+            # xdg-open 也不能继承产物的 LD_LIBRARY_PATH，否则可能加载到包内库
+            subprocess.Popen(["xdg-open", path], env=system_env())
     except Exception:  # noqa: BLE001
         pass
 
@@ -2605,6 +2642,19 @@ class ScrcpyGui:
             messagebox.showinfo(APP_TITLE, "Windows 不需要 udev 规则。\n"
                                            "若设备识别不到，请检查 USB 驱动与数据线。")
             return
+        # 容器 / chroot 里本来就没有 USB 设备节点，装 udev 规则毫无意义，
+        # 而且提权也常常不可用（proot 下 pkexec 会崩）。直接引导去无线连接。
+        if not os.path.isdir("/dev/bus/usb"):
+            self.log("！ 当前环境看不到 /dev/bus/usb（多半是容器 / chroot / proot）")
+            self.log("   USB 直连在这里本来就用不了，装 udev 规则也没用。")
+            self.log("   请改用「无线连接」页：无线调试走 TCP，不需要 udev 规则。")
+            messagebox.showinfo(
+                APP_TITLE,
+                "当前环境里没有 USB 设备节点（/dev/bus/usb 不存在），\n"
+                "多半是容器 / chroot / proot 环境。\n\n"
+                "这种环境里 USB 直连无法使用，装 udev 规则也没有意义。\n"
+                "请改用「无线连接」页 —— 无线调试走 TCP，不需要 udev 规则。")
+            return
         script = find_udev_script()
         if not script:
             messagebox.showwarning(
@@ -2629,7 +2679,8 @@ class ScrcpyGui:
                          daemon=True).start()
 
     def _pkexec_worker(self, script):
-        rc, out = run(["pkexec", script], timeout=240)
+        # 必须用 run_system：干净环境，否则 pkexec 会加载产物自带的库而崩溃
+        rc, out = run_system(["pkexec", script], timeout=240)
         self.log("$ pkexec %s" % script)
         self.log(out.strip() or "(无输出)")
         if rc == 0:
@@ -2642,6 +2693,9 @@ class ScrcpyGui:
                 "然后点「刷新设备」。"))
         else:
             self.log("！ 安装失败（返回码 %s）。也可以在终端手动执行：sudo %s" % (rc, script))
+            if "symbol lookup error" in out or "undefined symbol" in out:
+                self.log("   原因：系统命令被产物的动态库路径污染（已在新版本里修好）。")
+                self.log("   现在请手动执行上面那条 sudo 命令即可。")
             self.root.after(0, lambda: messagebox.showwarning(
                 APP_TITLE,
                 "自动安装未完成（可能取消了密码框）。\n\n"
