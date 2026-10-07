@@ -54,11 +54,12 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
           fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
-                                        full='{"include":[
+                                                  full='{"include":[
             {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64","extra":"--auto-scrcpy"},
             {"image":"ubuntu:22.04","platform":"linux/amd64","label":"glibc2.35-x86_64","extra":"--auto-scrcpy"},
             {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
             {"image":"ubuntu:22.04","platform":"linux/arm64","label":"glibc2.35-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64","extra":"--auto-scrcpy --allow-old-adb"},
             {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l","extra":"--auto-scrcpy --allow-old-adb"},
             {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l","extra":"--auto-scrcpy --allow-old-adb"}
           ]}'
@@ -291,14 +292,19 @@ jobs:
             adb 要求较新的 glibc，**所以 glibc2.31 的 ARM 产物只能用 adb 28，这两个
             功能在物理上不可用** —— 程序会直接不显示它们，并在界面上写明原因。
 
-            | 产物 | 内嵌 adb | USB 直连 | 方式一 USB 转无线 | 配对码 | 二维码 |
-            |---|---|---|---|---|---|
-            | `glibc2.31-x86_64` | 37 | 支持 | 支持 | 支持 | 支持 |
-            | `glibc2.35-x86_64` / `glibc2.35-aarch64` | 34 | 支持 | 支持 | 支持 | 支持 |
-            | `glibc2.36-armv7l` | 34 | 支持 | 支持 | 支持 | 支持 |
-            | `glibc2.31-aarch64` / `glibc2.31-armv7l` | 28 | 支持 | 支持 | **不支持** | **不支持** |
+            | 产物 | 内嵌 adb | USB 直连 | 方式一 USB 转无线 | **配对码** | **二维码** |
+|---|---|---|---|---|---|
+| `glibc2.31-x86_64` | 37（Google 官方） | 支持 | 支持 | **支持** | **支持** |
+| `glibc2.35-x86_64` | 37（Google 官方） | 支持 | 支持 | **支持** | **支持** |
+| `glibc2.36-aarch64` | 34 | 支持 | 支持 | **支持** | **支持** |
+| `glibc2.36-armv7l` | 34 | 支持 | 支持 | **支持** | **支持** |
+| `glibc2.31-aarch64` | 28 | 支持 | 支持 | **不支持** | **不支持** |
+| `glibc2.35-aarch64` | 28 | 支持 | 支持 | **不支持** | **不支持** |
+| `glibc2.31-armv7l` | 28 | 支持 | 支持 | **不支持** | **不支持** |
 
-            没有配对码怎么办：先用 USB 插一次走「方式一：USB 转无线」；或在一台有新版
+            **为什么 ARM 上分两档**：Google 官方 platform-tools 只提供 x86_64；ARM 只能取 Debian/Ubuntu 归档的 adb，而带 `adb pair` 的版本要求 glibc ≥ 2.36 —— 所以 glibc2.31 / 2.35 的 **ARM** 产物只能是 adb 28，glibc2.36 的 ARM 产物才有 adb 34。
+
+没有配对码怎么办：先用 USB 插一次走「方式一：USB 转无线」；或在一台有新版
             adb 的电脑上配对成功后，把 `~/.android/adbkey` 与 `adbkey.pub` 拷到目标机
             `~/.android/`，之后 `adb connect 手机IP:端口` 即可，不需要 `adb pair`。
 

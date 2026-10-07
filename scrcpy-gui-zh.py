@@ -511,25 +511,50 @@ _PAIRING_OK = None
 
 
 def adb_too_old_hint(feature="无线调试"):
-    """adb 过旧时的解决指引（纯文本）。"""
-    return (
-        "当前 adb 版本：%s\n"
-        "（无线调试用的 adb pair / adb mdns 需要 platform-tools ≥ 30，2020 年才有）\n\n"
-        "受影响：%s、二维码配对、自动发现设备与端口\n"
-        "不受影响：USB 直连；以及「方式一：USB 转无线」\n"
-        "          （adb tcpip / adb connect 老版本就有，现在就能用）\n\n"
-        "想恢复无线配对的两种办法：\n\n"
-        "  1) 重新构建产物 —— 构建脚本会自动下载官方 platform-tools：\n"
-        "         ./build-linux.sh --clean\n"
-        "     也可手动放进项目：\n"
-        "         wget %s\n"
-        "         unzip -q platform-tools-latest-linux.zip -d vendor/\n"
-        "         chmod +x vendor/platform-tools/adb    # 关键：别丢可执行位\n"
-        "     （没装 unzip 就用 python3 -m zipfile -e … vendor/，同样要 chmod +x）\n"
-        "     之后程序会自动优先使用 vendor/platform-tools/adb\n\n"
-        "  2) 现在就想无线 —— 用「方式一：USB 转无线」：\n"
-        "         插着数据线 → 点「启用无线端口」→ 拔线 → 点「连接」"
-        % (adb_version_text(), feature, PLATFORM_TOOLS_URL))
+    """adb 过旧时的解决指引（纯文本）。
+
+    注意：**Google 官方 platform-tools 只有 x86_64**，ARM 上照抄"下载官方包"
+    是白忙一场（用户实测踩过）。所以这里按架构给建议。
+    """
+    lines = [
+        "当前 adb 版本：%s" % adb_version_text(),
+        "（无线调试用的 adb pair / adb mdns 需要 platform-tools ≥ 30，2020 年才有）",
+        "",
+        "受影响：%s" % feature,
+        "不受影响：USB 直连；以及「方式一：USB 转无线」",
+        "          （adb tcpip / adb connect 老版本就有，现在就能用）",
+        "",
+    ]
+    import platform as _plat
+
+    machine = (_plat.machine() or "").lower()
+    if machine in ("x86_64", "amd64"):
+        lines += [
+            "想恢复无线配对：重新构建产物，构建脚本会自动下载官方 platform-tools ——",
+            "    ./build-linux.sh --clean",
+            "  也可手动放进项目：",
+            "    wget %s" % PLATFORM_TOOLS_URL,
+            "    unzip -q platform-tools-latest-linux.zip -d vendor/",
+            "    chmod +x vendor/platform-tools/adb    # 关键：别丢可执行位",
+            "  （没装 unzip 就用 python3 -m zipfile -e … vendor/，同样要 chmod +x）",
+            "  之后程序会自动优先使用 vendor/platform-tools/adb",
+        ]
+    else:
+        lines += [
+            "为什么这份产物没有：Google 官方 platform-tools **只提供 x86_64**，",
+            "ARM（%s）上只能从 Debian/Ubuntu 归档取 adb，而带 adb pair 的版本" % (machine or "本机"),
+            "要求更高的 glibc —— 本产物构建环境的 glibc 不够，只能退到旧 adb。",
+            "",
+            "解决办法：改用 glibc 更高的那一档产物（文件名里能看出来）：",
+            "  · glibc2.36-aarch64 / glibc2.36-armv7l → 内嵌 adb 34，配对码/二维码可用",
+            "  · 换之前先用「功能说明 .txt」确认那档的 adb 版本（≥ 30 才有配对）",
+        ]
+    lines += [
+        "",
+        "不想换产物，现在就要无线 —— 用「方式一：USB 转无线」：",
+        "    插着数据线 → 点「启用无线端口」→ 拔线 → 点「连接」",
+    ]
+    return "\n".join(lines)
 
 
 def in_virtual_machine():

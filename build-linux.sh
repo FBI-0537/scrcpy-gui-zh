@@ -1140,7 +1140,10 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
         printf '          · 连无线调试端口 → 需要 TLS\n'
         printf '        这是版本硬限制，**不需要用户安装任何软件**。\n'
         printf '  本版本仍然可用：USB 直连、方式一（USB 转无线）、拷 adbkey 后直连。\n'
-        printf '  想要配对码/二维码：请换内嵌 adb >= 30 的产物（glibc2.35/2.36/2.39 都有）。\n'
+        printf '  想要配对码/二维码：请换内嵌 adb >= 30 的产物 ——\n'
+        printf '    · x86_64：glibc2.31 / glibc2.35 那两份都带 Google 官方 adb 37\n'
+        printf '    · ARM   ：要用 glibc2.36 那两份（adb 34）；glibc2.31/2.35 的\n'
+        printf '              ARM 产物因为 glibc 限制只能带 adb 28\n'
     fi
     printf '录屏 / 音频转发           ：支持（scrcpy %s 的能力）\n' "${SCRCPY_VER:-?}"
     if ver_ge "${SCRCPY_VER:-0}" "3.3"; then
