@@ -188,7 +188,7 @@ jobs:
           fi
           exit $rc
 
-      - name: 把状态与日志回传到 ci-log-<label> 分支（无人值守排查用）
+      - name: 把状态与日志回传到 ci-log-<label>-<run> 分支（无人值守排查用）
         if: always()
         shell: bash
         continue-on-error: true
@@ -213,12 +213,12 @@ jobs:
           mkdir -p "logs/${{ matrix.label }}"
           cp /tmp/cilog/* "logs/${{ matrix.label }}/" 2>/dev/null || true
           # 用 orphan 分支 + 只加 logs/，避免把整个仓库都提交进日志分支
-          git checkout --orphan "ci-log-${{ matrix.label }}" 2>/dev/null || true
+          git checkout --orphan "ci-log-${{ matrix.label }}-${{ github.run_number }}" 2>/dev/null || true
           git rm -r --cached . >/dev/null 2>&1 || true
           git add -f "logs/${{ matrix.label }}"
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "CI 日志：${{ matrix.label }}（run ${{ github.run_number }}）" || true
-          git push -f origin "HEAD:ci-log-${{ matrix.label }}"
+          git push -f origin "HEAD:ci-log-${{ matrix.label }}-${{ github.run_number }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -297,7 +297,7 @@ jobs:
             throw "验收失败"
           }
 
-      - name: 把状态与日志回传（无人值守排查用）
+      - name: 把状态与日志回传（ci-log-windows-x86_64-<run>）
         if: always()
         continue-on-error: true
         shell: bash
@@ -320,11 +320,11 @@ jobs:
           cd logs-repo
           mkdir -p "logs/windows-x86_64"
           cp /tmp/cilog/* "logs/windows-x86_64/" 2>/dev/null || true
-          git checkout -b ci-log-windows-x86_64 2>/dev/null || git checkout ci-log-windows-x86_64
+          git checkout --orphan ci-log-windows-x86_64-${{ github.run_number }} 2>/dev/null || true
           git add -A
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "CI 日志：windows-x86_64（第 ${{ github.run_number }} 次）" || true
-          git push -f origin "HEAD:ci-log-windows-x86_64"
+          git push -f origin "HEAD:ci-log-windows-x86_64-${{ github.run_number }}"
 
       - uses: actions/upload-artifact@v4
         with:
