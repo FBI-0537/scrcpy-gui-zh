@@ -1168,13 +1168,12 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
     printf '%s\n' " scrcpy 中文 GUI —— 功能与兼容性说明"
     printf '%s\n' "=============================================================="
     printf '产物文件  ：%s\n' "$BASE_OUT"
-    printf '\n【同一个产物的两种形态】\n'
-    printf '  %s\n' "$BASE_OUT"
-    printf '      单文件版：一个文件拿走就能跑；启动时会自解压（需要临时空间）\n'
-    printf '  %s-dir.tar.gz\n' "$BASE_OUT"
-    printf '      目录版：解压后直接用，**启动不解压**、省临时空间与启动内存，\n'
-    printf '              低内存设备（开发板 / 掌机）推荐用这个\n'
-    printf '  两者功能完全一样（都能用 --cli 命令行模式）\n'
+    printf '\n【产物形态：解压即用】\n'
+    printf '  %s.tar.gz\n' "$BASE_OUT"
+    printf '      解压后是一个目录，里面是可执行文件 + 全部依赖 + 内嵌的\n'
+    printf '      scrcpy / adb / scrcpy-server，**启动不需要自解压**：\n'
+    printf '        启动快、启动内存峰值低、不占临时空间\n'
+    printf '      （低内存开发板 / 掌机不会再因为解压把 /tmp 塞爆而卡死）\n'
     printf '功能档位  ：%s（%s）\n' "$FEATURE_TAG" \
         "$([ "$FEATURE_TAG" = full ] && printf '全功能：含无线配对码/二维码' || printf '最兼容：不含无线配对码/二维码，换取更低 glibc')"
     printf '构建镜像  ：%s\n' "$DISTRO_NAME"
@@ -1232,7 +1231,8 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
         printf '     之后本机 adb connect 手机IP:端口 即可，不需要 adb pair\n'
     fi
     printf '\n【使用方法】\n'
-    printf '  chmod +x %s\n' "$BASE_OUT"
+    printf '  tar -xzf %s.tar.gz\n' "$BASE_OUT"
+    printf '  cd %s\n' "$BASE_OUT"
     printf '  ./%s                 # 开界面\n' "$BASE_OUT"
     printf '  ./%s --cli           # 命令行模式：列设备（低内存设备推荐）\n' "$BASE_OUT"
     printf '  ./%s --cli --serial <序列号>   # 命令行直接投屏\n' "$BASE_OUT"
