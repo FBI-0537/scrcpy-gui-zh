@@ -54,11 +54,11 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
           fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
-                                                                                full='{"include":[
-            {"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb"},
+                                                                                          full='{"include":[
+            {"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy --onedir"},
+            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy --onedir"},
+            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb --onedir"},
+            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb --onedir"},
             {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy --allow-old-adb --onedir"},
             {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy --allow-old-adb --onedir"}
           ]}'
@@ -306,6 +306,20 @@ jobs:
             没有配对码怎么办：先用 USB 插一次走「方式一：USB 转无线」；或在一台有新版
             adb 的电脑上配对成功后，把 `~/.android/adbkey` 与 `adbkey.pub` 拷到目标机
             `~/.android/`，之后 `adb connect 手机IP:端口` 即可，不需要 `adb pair`。
+
+            ## 同一个产物有两种形态（每个版本都有）
+
+            | 文件 | 形态 | 适合 |
+            |---|---|---|
+            | `<名称>` | **单文件版**：一个文件拿走就能跑；启动时自解压（临时目录） | 一般桌面发行版 |
+            | `<名称>-dir.tar.gz` | **目录版**：解压后直接用，**启动不解压**，省掉 100+ MB 临时空间与启动内存峰值 | **低内存设备**（开发板 / 掌机 / 虚拟机） |
+
+            两者功能一致，都支持命令行模式（不加载界面，再省约 40-60 MB 内存）：
+
+            ```
+            ./<名称> --cli                        # 列出设备
+            ./<名称> --cli --serial <序列号> …    # 直接投屏（其余参数原样给 scrcpy）
+            ```
 
             ## 每个产物旁边都有一份 `.txt`
 

@@ -1048,41 +1048,22 @@ fi
 ARTIFACT_NAME="$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG-$FEATURE_TAG"
 info "功能档位：$FEATURE_TAG（内嵌 adb $(adb_version_text "$ADB_BIN")）"
 
-if [ "$ONEDIR" -eq 1 ]; then
-    OUT="$DIST_DIR/$ARTIFACT_NAME-dir/$ARTIFACT_NAME"
-    rm -rf "$DIST_DIR/$ARTIFACT_NAME-dir" "$DIST_DIR/$ARTIFACT_NAME-dir.tar.gz"
-else
-    OUT="$DIST_DIR/$ARTIFACT_NAME"
-    rm -f "$OUT"
-fi
+# 主产物：单文件版（一个文件拿走，用户最初的诉求）
+OUT="$DIST_DIR/$ARTIFACT_NAME"
+ONEDIR_OUT="$DIST_DIR/$ARTIFACT_NAME-dir"
+rm -f "$OUT"
+rm -rf "$ONEDIR_OUT" "$ONEDIR_OUT.tar.gz"
 rm -rf "$BUILD_ROOT/pyiwork" "$BUILD_ROOT/pyispec"
 
-if [ "$ONEDIR" -eq 1 ]; then
-    # 目录版：不解压，启动即用（低内存设备用这个）
-    info "打包方式：目录版（--onedir，启动不解压，适合低内存设备）"
-    PYI_ARGS=(
-        --noconfirm --clean --onedir
-        --name "$ARTIFACT_NAME"
-        --distpath "$DIST_DIR"
-        --workpath "$BUILD_ROOT/pyiwork"
-        --specpath "$BUILD_ROOT/pyispec"
-        --hidden-import tkinter
-    )
-else
+# 公共参数；模式由后面的 --onefile / --onedir 决定
 PYI_ARGS=(
-    --noconfirm --clean --onefile
+    --noconfirm --clean
     --name "$ARTIFACT_NAME"
     --distpath "$DIST_DIR"
     --workpath "$BUILD_ROOT/pyiwork"
     --specpath "$BUILD_ROOT/pyispec"
     --hidden-import tkinter
-    # 单文件包启动时要解压自己（100+ MB）。很多开发板 / 掌机的 /tmp 是
-    # tmpfs（占内存），解压就把 RAM 塞爆 → 整机卡死（甚至 OOM 杀掉桌面）。
-    # 指定 /var/tmp（磁盘）；不存在或不可写时 PyInstaller 会自动回退 /tmp。
-    # 用户仍可用环境变量覆盖：TMPDIR=/your/disk/path ./产物
-    --runtime-tmpdir /var/tmp
 )
-fi
 # scrcpy / adb 及其依赖库全部塞进 _MEIPASS 根目录
 info "内嵌 scrcpy、adb 与 $LIBN 个依赖库…"
 PYI_ARGS+=(--add-binary "$SCRCPY_BIN:.")
@@ -1098,14 +1079,37 @@ PYI_ARGS+=(--add-data "$SERVER_SRC:share/scrcpy")
 PYI_ARGS+=(--add-data "$UDEV_SRC:.")
 PYI_ARGS+=("$GUI_PY")
 
-if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" >/dev/null; then
-    die "PyInstaller 打包失败，请把上面的报错发出来"
+# ① 单文件版。
+#    --runtime-tmpdir：单文件包启动要解压自己（100+ MB），而很多开发板 / 掌机
+#    的 /tmp 是 tmpfs（占内存），解压会把 RAM 塞爆导致整机卡死。指到 /var/tmp
+#    （磁盘）；不可写时 PyInstaller 会自动回退 /tmp。也可用 TMPDIR=… 覆盖。
+if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" --onefile \
+        --runtime-tmpdir /var/tmp >/dev/null; then
+    die "PyInstaller 打包失败（单文件版），请把上面的报错发出来"
 fi
 if [ ! -f "$OUT" ]; then
     die "没有生成 $OUT"
 fi
 chmod +x "$OUT"
-info "已生成：$OUT（$(du -h "$OUT" | cut -f1)）"
+info "已生成单文件版：$OUT（$(du -h "$OUT" | cut -f1)）"
+
+# ② 目录版（--onedir）：**所有版本都产出**。启动不解压，省掉 100+ MB 临时
+#    空间与启动内存峰值，低内存设备（开发板 / 掌机）用这个更稳。
+if [ "$ONEDIR" -eq 1 ]; then
+    info "另外打包目录版（启动不解压，适合低内存设备）…"
+    if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" --onedir >/dev/null; then
+        warn "目录版打包失败（不影响单文件版）"
+    elif [ ! -x "$ONEDIR_OUT/$ARTIFACT_NAME" ]; then
+        warn "目录版没有生成可执行文件（不影响单文件版）"
+    else
+        info "已生成目录版：$ONEDIR_OUT"
+        if tar -czf "$ONEDIR_OUT.tar.gz" -C "$DIST_DIR" "$ARTIFACT_NAME-dir" 2>/dev/null; then
+            info "已生成目录版压缩包：$ONEDIR_OUT.tar.gz（$(du -h "$ONEDIR_OUT.tar.gz" | cut -f1)）"
+        else
+            warn "目录版打成 tar.gz 失败（不影响 -dir 目录本身）"
+        fi
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 5. 端到端自检
@@ -1113,10 +1117,18 @@ info "已生成：$OUT（$(du -h "$OUT" | cut -f1)）"
 step "5/6 自检（实际运行产物，确认内嵌的 scrcpy / adb / server 都可用）"
 
 if "$OUT" --selftest; then
-    info "自检通过"
+    info "单文件版自检通过"
 else
     die "自检失败：产物内嵌的组件有问题，不交付。
      请把上面的输出发出来（常见原因是依赖库没收集全）。"
+fi
+
+if [ "$ONEDIR" -eq 1 ] && [ -x "$ONEDIR_OUT/$ARTIFACT_NAME" ]; then
+    if "$ONEDIR_OUT/$ARTIFACT_NAME" --selftest >/dev/null; then
+        info "目录版自检通过"
+    else
+        die "目录版自检失败：$ONEDIR_OUT"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -1152,6 +1164,13 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
     printf '%s\n' " scrcpy 中文 GUI —— 功能与兼容性说明"
     printf '%s\n' "=============================================================="
     printf '产物文件  ：%s\n' "$BASE_OUT"
+    printf '\n【同一个产物的两种形态】\n'
+    printf '  %s\n' "$BASE_OUT"
+    printf '      单文件版：一个文件拿走就能跑；启动时会自解压（需要临时空间）\n'
+    printf '  %s-dir.tar.gz\n' "$BASE_OUT"
+    printf '      目录版：解压后直接用，**启动不解压**、省临时空间与启动内存，\n'
+    printf '              低内存设备（开发板 / 掌机）推荐用这个\n'
+    printf '  两者功能完全一样（都能用 --cli 命令行模式）\n'
     printf '功能档位  ：%s（%s）\n' "$FEATURE_TAG" \
         "$([ "$FEATURE_TAG" = full ] && printf '全功能：含无线配对码/二维码' || printf '最兼容：不含无线配对码/二维码，换取更低 glibc')"
     printf '构建镜像  ：%s\n' "$DISTRO_NAME"
