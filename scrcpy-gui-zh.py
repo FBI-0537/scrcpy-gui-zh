@@ -39,6 +39,21 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, messagebox, filedialog
 
+# 卡住时能立刻看到线程栈：Ctrl+\ 或 kill -USR1 <pid>。
+# 在 Termux / chroot / 虚拟机里排查"界面卡死"时非常有用 —— 没有栈就只能猜。
+try:
+    import faulthandler as _fh
+
+    _fh.enable()
+    try:
+        import signal as _sig
+
+        _fh.register(_sig.SIGUSR1, all_threads=True)
+    except Exception:  # noqa: BLE001
+        pass
+except Exception:  # noqa: BLE001
+    pass
+
 APP_TITLE = "scrcpy 手机投屏"
 # 版本号：与 build-linux.sh / build-windows.ps1 里的 APP_VER 默认值保持一致。
 # 打包时若设置了同名环境变量，以环境变量为准。
@@ -1140,6 +1155,7 @@ class ScrcpyGui:
         self._force_software_render = False
         self._software_retry_done = False
         self._want_software_retry = False
+        self._refresh_running = False      # 设备列表后台刷新中？
         self._usb_fix_offered = False  # 是否已弹过「USB 权限」提示
         self._fuse_warned = False      # 是否已弹过「缺 FUSE」提示
 
@@ -1722,43 +1738,79 @@ class ScrcpyGui:
             self.root.after(900, self._maybe_warn_fuse)
 
     def refresh_devices(self):
+        """异步刷新设备列表。
+
+        为什么必须异步：在 Termux/chroot、慢速虚拟机等环境里，adb 调用可能非常慢
+        （一次 `devices -l` 加每台设备一次 `get-state`，最坏几十秒）。这些调用原先
+        跑在 Tk 主线程上，而 _auto_refresh 每 4 秒又来一次 → 界面看着像卡死。
+        现在改成：后台线程采集，结果再回主线程更新界面。
+        """
         if not ADB:
             return
-        self.dev_picker.close()
-        devices = adb_devices()
-        items = []
-        hidden_now = 0
-        for serial, state, model in devices:
-            if serial in self.hidden_serials:
-                hidden_now += 1
-                continue
-            transit = adb_device_transport(serial)
-            kind = "无线" if transit == "tcp" else "USB"
-            label = "%s  [%s]  (%s)" % (model or serial, STATE_ZH.get(state, state), kind)
-            # 只有网络设备能真的删掉，USB 设备不给删除图标
-            items.append((serial, label, transit == "tcp"))
+        if getattr(self, "_refresh_running", False):
+            return                      # 上一次还没回来，不叠加
+        self._refresh_running = True
+        self._set_status("正在检测设备…")
 
-        self.dev_picker.set_items(items, self.dev_picker.current())
-        shown = len(items)
-        tail_hidden = ("（另有 %d 台已被隐藏，点「显示全部」恢复）" % hidden_now
-                       if hidden_now else "")
-        if shown:
-            self.lbl_devhint.configure(
-                text="检测到 %d 台设备。点下拉框里的 ✕ 可断开并删除无线设备。%s"
-                     % (shown, tail_hidden))
-            self._set_status("已检测到 %d 台设备" % shown)
-        else:
-            tail = ("③ 已配置 udev 权限规则。" if not IS_WIN
-                    else "③ 已装好厂商 USB 驱动（设备管理器里没有感叹号）。")
-            if hidden_now:
+        def work():
+            rows, hidden_now, err = [], 0, ""
+            t0 = time.time()
+            try:
+                devices = adb_devices()
+                for serial, state, model in devices:
+                    if serial in self.hidden_serials:
+                        hidden_now += 1
+                        continue
+                    rows.append((serial, state, model, adb_device_transport(serial)))
+            except Exception as exc:  # noqa: BLE001
+                err = str(exc)
+            cost = time.time() - t0
+            try:
+                self.root.after(0, lambda: self._apply_devices(rows, hidden_now, cost, err))
+            except Exception:  # noqa: BLE001
+                self._refresh_running = False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _apply_devices(self, rows, hidden_now, cost=0.0, err=""):
+        """在主线程里更新设备列表（adb 调用已在后台完成）。"""
+        try:
+            if err:
+                self.log("！ 读取设备列表失败：%s" % err)
+            if cost >= 8:
+                self.log("提示：本次检测设备用了 %.1f 秒（adb 较慢，界面已改为后台"
+                         "检测，不影响操作）" % cost)
+            self.dev_picker.close()
+            items = []
+            for serial, state, model, transit in rows:
+                kind = "无线" if transit == "tcp" else "USB"
+                label = "%s  [%s]  (%s)" % (model or serial, STATE_ZH.get(state, state), kind)
+                # 只有网络设备能真的删掉，USB 设备不给删除图标
+                items.append((serial, label, transit == "tcp"))
+
+            self.dev_picker.set_items(items, self.dev_picker.current())
+            shown = len(items)
+            tail_hidden = ("（另有 %d 台已被隐藏，点「显示全部」恢复）" % hidden_now
+                           if hidden_now else "")
+            if shown:
                 self.lbl_devhint.configure(
-                    text="%d 台设备已被隐藏（点「显示全部」恢复）。" % hidden_now)
-                self._set_status("设备都被隐藏了")
-                return
-            self.lbl_devhint.configure(
-                text="没有检测到设备。请检查：① 数据线支持传输（非纯充电线）；"
-                     "② 手机已开启 USB 调试并点了「允许」；" + tail)
-            self._set_status("未检测到设备")
+                    text="检测到 %d 台设备。点下拉框里的 ✕ 可断开并删除无线设备。%s"
+                         % (shown, tail_hidden))
+                self._set_status("已检测到 %d 台设备" % shown)
+            else:
+                tail = ("③ 已配置 udev 权限规则。" if not IS_WIN
+                        else "③ 已装好厂商 USB 驱动（设备管理器里没有感叹号）。")
+                if hidden_now:
+                    self.lbl_devhint.configure(
+                        text="%d 台设备已被隐藏（点「显示全部」恢复）。" % hidden_now)
+                    self._set_status("设备都被隐藏了")
+                    return
+                self.lbl_devhint.configure(
+                    text="没有检测到设备。请检查：① 数据线支持传输（非纯充电线）；"
+                         "② 手机已开启 USB 调试并点了「允许」；" + tail)
+                self._set_status("未检测到设备")
+        finally:
+            self._refresh_running = False
 
     def _auto_refresh(self):
         # 下拉框展开时不要重建，否则用户正在选设备它就被刷没了
