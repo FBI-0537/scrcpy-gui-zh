@@ -755,6 +755,34 @@ host_arch() {
 # 老发行版自带的 python3 可能低于 3.8（Rocky 8 = 3.6），PyInstaller 6 用不了。
 # 这里优先用发行版提供的新版 python3.x，并用 /usr/local/bin/python3 顶上去，
 # 这样脚本里所有 `python3` 调用都会用到新版（/usr/local/bin 在 PATH 里更靠前）。
+# 让 python3 指向找到的新版解释器。**关键是要验证真的生效**：
+# 只做 ln -sf /usr/local/bin/python3 是不够的 —— 容器里 /usr/local/bin 未必在
+# PATH 前面（实测 Rocky 8 上就出现"软链设了但 python3 还是 3.6"）。
+# 验证不过就设 PYTHON3_BIN（绝对路径），后面统一用 ${PYTHON3_BIN:-python3}。
+use_python_candidate() {
+    local cand="$1" bin now
+    bin="$(command -v "$cand" 2>/dev/null || true)"
+    [ -n "$bin" ] || return 1
+
+    mkdir -p /usr/local/bin 2>/dev/null || true
+    ln -sf "$bin" /usr/local/bin/python3 2>/dev/null || true
+    export PATH="/usr/local/bin:$PATH"
+    hash -r 2>/dev/null || true
+
+    now="$(version_of python3)"
+    if [ -n "$now" ] && ver_ge "$now" "$MIN_PYTHON"; then
+        info "    python3 → $bin（$now）"
+        return 0
+    fi
+
+    warn "    软链没生效（python3 仍是 ${now:-未知}），改为直接指定解释器"
+    PYTHON3_BIN="$bin"
+    export PYTHON3_BIN
+    info "    PYTHON3_BIN=$PYTHON3_BIN"
+    return 0
+}
+
+
 ensure_modern_python() {
     local cur cand v
     cur="$(version_of python3)"
@@ -762,15 +790,14 @@ ensure_modern_python() {
         return 0
     fi
     info "python3 是 ${cur:-未安装}（低于 $MIN_PYTHON），找找发行版有没有更新的…"
-    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
+    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 \
+                /usr/bin/python3.13 /usr/bin/python3.12 /usr/bin/python3.11 \
+                /usr/bin/python3.10 /usr/bin/python3.9 /usr/bin/python3.8; do
         if command -v "$cand" >/dev/null 2>&1; then
             v="$(version_of "$cand")"
             if [ -n "$v" ] && ver_ge "$v" "$MIN_PYTHON"; then
                 info "  · 使用 $cand（$v）"
-                mkdir -p /usr/local/bin 2>/dev/null || true
-                ln -sf "$(command -v "$cand")" /usr/local/bin/python3 2>/dev/null || true
-                hash -r 2>/dev/null || true
-                return 0
+                use_python_candidate "$cand" && return 0
             fi
         fi
     done
@@ -780,14 +807,20 @@ ensure_modern_python() {
     if [ "$DISTRO_FAMILY" = "rhel" ] && command -v dnf >/dev/null 2>&1; then
         # 注意带上 -pip / -setuptools：RHEL 的 python3.11 建 venv 时
         # ensurepip 不可用（拆到 -pip 子包），没有 pip 就装不了 PyInstaller
-        for _pkg in "python3.11 python3.11-devel python3.11-tkinter python3.11-pip python3.11-setuptools" \
+        # 实测 Rocky 8.10：python3.11 **不存在**（module 名也没有）；
+        # 能用的是 python39（module）。所以先把 module 打开再装。
+        for _mod in python39 python311; do
+            dnf -y module enable "$_mod" 2>&1 | sed -n '1,4p' || true
+        done
+        for _pkg in "python39 python39-devel python39-tkinter" \
                     "python3.9 python3.9-devel python3.9-tkinter python3.9-pip python3.9-setuptools" \
+                    "python3.11 python3.11-devel python3.11-tkinter" \
                     "python3-pip python3-setuptools"; do
             info "    · dnf install $_pkg"
             # shellcheck disable=SC2086
             dnf -y install $_pkg 2>&1 | sed -n '1,8p' || true
         done
-        for _mod in python311 python39; do
+        for _mod in python39 python311; do
             info "    · dnf module install $_mod"
             dnf -y module install "$_mod" 2>&1 | sed -n '1,8p' || true
         done
@@ -796,15 +829,14 @@ ensure_modern_python() {
     fi
     install_keys_optional python311 || true
     install_keys_optional python39 || true
-    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
+    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 \
+                /usr/bin/python3.13 /usr/bin/python3.12 /usr/bin/python3.11 \
+                /usr/bin/python3.10 /usr/bin/python3.9 /usr/bin/python3.8; do
         if command -v "$cand" >/dev/null 2>&1; then
             v="$(version_of "$cand")"
             if [ -n "$v" ] && ver_ge "$v" "$MIN_PYTHON"; then
                 info "  · 装上并用 $cand（$v）"
-                mkdir -p /usr/local/bin 2>/dev/null || true
-                ln -sf "$(command -v "$cand")" /usr/local/bin/python3 2>/dev/null || true
-                hash -r 2>/dev/null || true
-                return 0
+                use_python_candidate "$cand" && return 0
             fi
         fi
     done

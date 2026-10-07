@@ -627,9 +627,10 @@ _pyver="$(version_of python3)"
 if [ -z "$_pyver" ] || ! ver_ge "$_pyver" "$MIN_PYTHON"; then
     die "python3 版本仍然不满足要求：${_pyver:-未知} < $MIN_PYTHON
      本机的 python3 太旧，且自动安装新版失败（上面的 dnf 输出里有原因）。
-     Rocky/RHEL 8 可以手动执行：
-       sudo dnf -y install python3.11 python3.11-devel python3.11-tkinter
-     然后重新运行本脚本（脚本会自动把 python3 指向 3.11）。"
+     Rocky/RHEL 8 上 python3.11 **不存在**，可执行：
+       sudo dnf -y module install python39
+       （装完本脚本会用它，并把它指向 python3）
+     然后重新运行本脚本。"
 fi
 chk_ok "python3" "$_pyver（要求 ≥ $MIN_PYTHON）"
 
@@ -679,12 +680,12 @@ fi
 if [ ! -x "$BUILD_ROOT/venv/bin/python" ]; then
     info "创建构建用虚拟环境：$BUILD_ROOT/venv"
     rm -rf "$BUILD_ROOT/venv"
-    if ! python3 -m venv "$BUILD_ROOT/venv"; then
+    if ! "${PYTHON3_BIN:-python3}" -m venv "$BUILD_ROOT/venv"; then
         warn "创建虚拟环境失败，尝试补装 venv 相关包…"
         MISSING_PKGS=("venv")
         MISSING_DESC=("python3 的 venv 模块不可用")
         ensure_deps
-        python3 -m venv "$BUILD_ROOT/venv" \
+        "${PYTHON3_BIN:-python3}" -m venv "$BUILD_ROOT/venv" \
             || die "创建虚拟环境失败：$BUILD_ROOT/venv"
     fi
 fi
@@ -702,7 +703,7 @@ if ! "$VPY" -m pip --version >/dev/null 2>&1; then
     pkg_install python3-pip >/dev/null 2>&1 || true
     pkg_install python3.11-pip >/dev/null 2>&1 || true
     rm -rf "$BUILD_ROOT/venv"
-    python3 -m venv "$BUILD_ROOT/venv" >/dev/null 2>&1 || true
+    "${PYTHON3_BIN:-python3}" -m venv "$BUILD_ROOT/venv" >/dev/null 2>&1 || true
     "$VPY" -m ensurepip --upgrade >/dev/null 2>&1 || true
 fi
 if ! "$VPY" -m pip --version >/dev/null 2>&1; then
