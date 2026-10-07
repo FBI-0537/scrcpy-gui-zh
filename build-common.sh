@@ -775,6 +775,14 @@ ensure_modern_python() {
         fi
     done
     info "  · 没找到，尝试安装一份…"
+    # RHEL 8 里 python3.11 / python3.9 是 module，必须先 enable 再装
+    if [ "$DISTRO_FAMILY" = "rhel" ] && command -v dnf >/dev/null 2>&1; then
+        for _m in python311 python39; do
+            dnf module enable -y "$_m" >/dev/null 2>&1 || true
+            dnf module install -y "$_m" >/dev/null 2>&1 || true
+            install_keys_optional "$_m" >/dev/null 2>&1 || true
+        done
+    fi
     install_keys_optional python311 || install_keys_optional python39 || true
     for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
         if command -v "$cand" >/dev/null 2>&1; then
@@ -820,9 +828,14 @@ ensure_modern_ffmpeg() {
     rm -rf "$src"
     mkdir -p "$src"
     tar -xf "$tar" -C "$src" --strip-components=1 || { warn "FFmpeg 解压失败"; return 1; }
-    # 只编 scrcpy 需要的库；nasm 不在就用 --disable-x86asm（慢一点但能编）
+    # x86 汇编**默认关掉**：实测 focal 上启用后 libavutil.so 会缺
+    # ff_tx_codelet_list_float_x86（汇编目标没装配全）→ scrcpy 全部链接失败。
+    # C 版解码器照常工作，只是稍慢；这里可靠性优先。
+    # 想要 SIMD 加速：装好新版 nasm 后把下面改成 --enable-x86asm 自行验证。
     local asm_flag="--disable-x86asm"
-    command -v nasm >/dev/null 2>&1 && asm_flag="--enable-x86asm"
+    if [ "${FFMPEG_X86ASM:-0}" = "1" ] && command -v nasm >/dev/null 2>&1; then
+        asm_flag="--enable-x86asm"
+    fi
     # ⚠️ 只关「程序和文档」，**不要**关 avfilter/network 等库和特性：
     # scrcpy 会链接到它们，关掉会变成 "undefined reference" 链接失败
     # （实测踩过：--disable-avfilter 之后所有 scrcpy 版本都编不过）。

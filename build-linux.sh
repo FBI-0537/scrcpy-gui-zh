@@ -1097,7 +1097,16 @@ info "已生成单文件版：$OUT（$(du -h "$OUT" | cut -f1)）"
 #    空间与启动内存峰值，低内存设备（开发板 / 掌机）用这个更稳。
 if [ "$ONEDIR" -eq 1 ]; then
     info "另外打包目录版（启动不解压，适合低内存设备）…"
-    if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" --onedir >/dev/null; then
+    # ⚠️ 必须换一个 --name！用同一个名字时 PyInstaller 的 --onedir 会
+    # **先删掉同名产物再建同名目录**，把刚做好的单文件版覆盖掉，
+    # 结果自检报 "Is a directory"（实测踩过，6 个目标全挂）。
+    PYI_ARGS_DIR=("${PYI_ARGS[@]}")
+    for _i in "${!PYI_ARGS_DIR[@]}"; do
+        if [ "${PYI_ARGS_DIR[$_i]}" = "--name" ]; then
+            PYI_ARGS_DIR[$((_i + 1))]="$ARTIFACT_NAME-dir"
+        fi
+    done
+    if ! "$VPY" -m PyInstaller "${PYI_ARGS_DIR[@]}" --onedir >/dev/null; then
         warn "目录版打包失败（不影响单文件版）"
     elif [ ! -x "$ONEDIR_OUT/$ARTIFACT_NAME" ]; then
         warn "目录版没有生成可执行文件（不影响单文件版）"
