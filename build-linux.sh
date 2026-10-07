@@ -94,7 +94,9 @@ AUTO_SCRCPY=0
 AUTO_ADB=1
 AUTO_DOWNLOAD=1
 ALLOW_OLD_ADB=0
-ONEDIR="${ONEDIR:-1}"   # 默认产出目录版（解压即用，启动不自解压）
+ONEDIR="${ONEDIR:-1}"
+# 跳过自编 FFmpeg（QEMU 上编译 FFmpeg 极慢；focal ARM 目标用它）
+NO_SELF_FFMPEG="${NO_SELF_FFMPEG:-0}"   # 默认产出目录版（解压即用，启动不自解压）
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -109,6 +111,7 @@ while [ "$#" -gt 0 ]; do
         --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
         --onedir)      ONEDIR=1; shift ;;
         --onefile)     ONEDIR=0; shift ;;   # 旧行为：自解压单文件（CI 不再用）
+        --no-self-ffmpeg) NO_SELF_FFMPEG=1; shift ;;   # 不自己编 FFmpeg（QEMU 上很慢）
         --scrcpy-version)
             [ "$#" -ge 2 ] || die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
             SCRCPY_VERSION="$2"; shift 2 ;;
@@ -253,7 +256,12 @@ build_scrcpy_from_source() {
     # 而 Debian 12 主仓只有 59.27。拿到新库 -> 可以编最新版 scrcpy。
     upgrade_ffmpeg_dev || true
     # 还是不够新（老发行版自带 FFmpeg <= 4.1、backports 也没有）就自己编一份
-    ensure_modern_ffmpeg || warn "FFmpeg 仍不够新，scrcpy 可能只能退到很老的版本"
+    if [ "$NO_SELF_FFMPEG" -eq 1 ]; then
+        info "按要求跳过自编 FFmpeg（--no-self-ffmpeg）：直接用本机 FFmpeg，"
+        info "  版本循环会自动退到能编的 scrcpy 版本（QEMU 上这一步能省 1-2 小时）"
+    else
+        ensure_modern_ffmpeg || warn "FFmpeg 仍不够新，scrcpy 可能只能退到很老的版本"
+    fi
 
     if ! pkg-config --exists sdl3 2>/dev/null; then
         info "系统里没有 SDL3，先尝试发行版包…"
