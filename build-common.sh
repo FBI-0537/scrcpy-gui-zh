@@ -435,6 +435,26 @@ disable_security_repo() {
     return 0
 }
 
+# RHEL 系（Rocky/Alma/RHEL 8）默认没装 EPEL、也没启用 CRB/PowerTools ——
+# meson / ninja-build / nasm 这些都在那里，不启用就会 "No match for argument"。
+prepare_repos() {
+    case "$DISTRO_FAMILY" in
+        rhel) ;;
+        *) return 0 ;;
+    esac
+    command -v dnf >/dev/null 2>&1 || return 0
+    if ! rpm -q epel-release >/dev/null 2>&1; then
+        info "启用 EPEL（meson / ninja-build / nasm 在里面）…"
+        pkg_install epel-release >/dev/null 2>&1 || warn "  · EPEL 装不上，稍后可能要用 pip 装 meson"
+    fi
+    # Rocky 8 叫 powertools，RHEL 9 起叫 crb
+    dnf config-manager --set-enabled powertools >/dev/null 2>&1 \
+        || dnf config-manager --set-enabled crb >/dev/null 2>&1 \
+        || true
+    return 0
+}
+
+
 pkg_refresh() {
     local SUDO=""
     if [ "$(id -u)" -ne 0 ]; then
@@ -803,9 +823,12 @@ ensure_modern_ffmpeg() {
     # 只编 scrcpy 需要的库；nasm 不在就用 --disable-x86asm（慢一点但能编）
     local asm_flag="--disable-x86asm"
     command -v nasm >/dev/null 2>&1 && asm_flag="--enable-x86asm"
+    # ⚠️ 只关「程序和文档」，**不要**关 avfilter/network 等库和特性：
+    # scrcpy 会链接到它们，关掉会变成 "undefined reference" 链接失败
+    # （实测踩过：--disable-avfilter 之后所有 scrcpy 版本都编不过）。
     if ! ( cd "$src" && ./configure --prefix="$VENDOR_FFMPEG" \
             --enable-shared --disable-static --disable-programs --disable-doc \
-            --disable-network --disable-avfilter $asm_flag ) \
+            $asm_flag ) \
             > "$VENDOR_DIR/ffmpeg-configure.log" 2>&1; then
         warn "FFmpeg configure 失败，日志尾部："
         tail -12 "$VENDOR_DIR/ffmpeg-configure.log" >&2 || true
@@ -821,6 +844,14 @@ ensure_modern_ffmpeg() {
     export LD_LIBRARY_PATH="$VENDOR_FFMPEG/lib:$VENDOR_FFMPEG/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     cur="$(pkg-config --modversion libavformat 2>/dev/null || true)"
     info "自编 FFmpeg 就绪：libavformat ${cur:-未知}（装在 $VENDOR_FFMPEG）"
+    # 顺便确认 scrcpy 需要的四个 .pc 都在，缺了不如早点说清楚
+    local miss=""
+    for _pc in libavformat libavcodec libavutil libavdevice; do
+        pkg-config --exists "$_pc" 2>/dev/null || miss="$miss $_pc"
+    done
+    if [ -n "$miss" ]; then
+        warn "自编 FFmpeg 缺少 pkg-config 条目：$miss"
+    fi
     [ -n "$cur" ]
 }
 

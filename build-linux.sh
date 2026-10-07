@@ -415,7 +415,9 @@ build_scrcpy_from_source() {
         # 编不过就丢掉落下一个 —— 老发行版上往往要靠更老的 scrcpy 才能过。
         if ! ninja -C "$src/build" > "$VENDOR_DIR/ninja.log" 2>&1; then
             warn "  · v$ver 编译失败（多半本机 FFmpeg 太旧 / 缺头文件），试下一个："
-            grep -E 'fatal error|error:' "$VENDOR_DIR/ninja.log" 2>/dev/null \
+            # 链接错误的关键行是 "undefined reference to ..."，不带 error: 字样，
+            # 所以这里要把它一起抓上，否则只看到 collect2 的总结行、查不出原因
+            grep -E 'fatal error|error:|undefined reference|cannot find -l' "$VENDOR_DIR/ninja.log" 2>/dev/null \
                 | sed -n '1,2p' | while IFS= read -r l; do warn "      $l"; done
             rm -rf "$src" "$cand_server"
             continue
@@ -602,6 +604,7 @@ fi
 [ -f "$UDEV_SRC" ] || die "找不到 udev 安装脚本：$UDEV_SRC"
 
 # 老发行版（Rocky 8 = python3.6）先换用发行版提供的新版 python3
+prepare_repos || true
 ensure_modern_python || true
 
 info "python3：$(python3 --version 2>&1)"

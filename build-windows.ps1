@@ -88,9 +88,14 @@ function Install-PipPackage {
             Write-Info2 ("改用镜像重试：" + $idx)
             $a += @('-i', $idx, '--trusted-host', ([Uri]$idx).Host)
         }
-        if ((Invoke-Python $a) -eq 0) {
+        # 关键：把 stdout+stderr 一起抓下来再 Write-Host。
+        # 只靠 Tee-Object 抓不到子进程的 stderr，之前 pip 的报错因此一直看不到。
+        $out = & $Python @a 2>&1 | Out-String
+        Write-Host $out
+        if ($LASTEXITCODE -eq 0) {
             return $true
         }
+        Write-Info2 ("pip 返回码：" + $LASTEXITCODE)
     }
     return $false
 }
