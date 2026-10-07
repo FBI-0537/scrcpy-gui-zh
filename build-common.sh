@@ -793,22 +793,23 @@ use_python_candidate() {
 
 
 ensure_modern_python() {
-    local cur cand v
+    local cur cand v bin_path
     cur="$(version_of python3)"
     if [ -n "$cur" ] && ver_ge "$cur" "$MIN_PYTHON"; then
         return 0
     fi
     info "python3 是 ${cur:-未安装}（低于 $MIN_PYTHON），找找发行版有没有更新的…"
-    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 \
-                /usr/bin/python3.13 /usr/bin/python3.12 /usr/bin/python3.11 \
-                /usr/bin/python3.10 /usr/bin/python3.9 /usr/bin/python3.8; do
-        if command -v "$cand" >/dev/null 2>&1; then
-            v="$(version_of "$cand")"
-            if [ -n "$v" ] && ver_ge "$v" "$MIN_PYTHON"; then
-                info "  · 使用 $cand（$v）"
-                use_python_candidate "$cand" && return 0
-            fi
-        fi
+    for cand in python3.11 /usr/bin/python3.11 python3.9 /usr/bin/python3.9 \
+                python3.12 /usr/bin/python3.12 python3.10 /usr/bin/python3.10 \
+                python3.13 /usr/bin/python3.13 python3.8 /usr/bin/python3.8; do
+        bin_path="$(command -v "$cand" 2>/dev/null || true)"
+        [ -n "$bin_path" ] || continue
+        v="$("$bin_path" --version 2>&1 | sed -n 's/.*Python \([0-9][0-9.]*\).*/\1/p' | head -1)"
+        [ -n "$v" ] || continue
+        ver_ge "$v" "$MIN_PYTHON" || continue
+        "$bin_path" -c "import tkinter" >/dev/null 2>&1 || continue
+        info "  · 使用 $bin_path（$v，tkinter 可用）"
+        use_python_candidate "$cand" && return 0
     done
     info "  · 没找到，尝试安装一份…"
     # 注意：**不要把输出丢掉** —— 装不上时必须能看见原因（包名/模块名在
@@ -821,13 +822,15 @@ ensure_modern_python() {
         for _mod in python39 python311; do
             dnf -y module enable "$_mod" 2>&1 | sed -n '1,4p' || true
         done
-        for _pkg in "python39 python39-devel python39-tkinter" \
-                    "python3.9 python3.9-devel python3.9-tkinter python3.9-pip python3.9-setuptools" \
-                    "python3.11 python3.11-devel python3.11-tkinter" \
-                    "python3-pip python3-setuptools"; do
+        # ⚠️ **逐个包**安装：dnf 是"整条命令全有或全无"，只要有一个包名不存在
+        # （例如 python3.11-tkinter），整批就都装不上 —— 实测踩过，导致
+        # python3.11 明明可用却一个都没装上。
+        for _pkg in python3.11 python3.11-devel python3.11-tkinter \
+                    python3.9 python3.9-devel python3.9-tkinter \
+                    python39 python39-devel python39-tkinter \
+                    python3-pip python3-setuptools; do
             info "    · dnf install $_pkg"
-            # shellcheck disable=SC2086
-            dnf -y install $_pkg 2>&1 | sed -n '1,8p' || true
+            dnf -y install "$_pkg" 2>&1 | sed -n '1,4p' || true
         done
         for _mod in python39 python311; do
             info "    · dnf module install $_mod"
@@ -838,18 +841,28 @@ ensure_modern_python() {
     fi
     install_keys_optional python311 || true
     install_keys_optional python39 || true
-    for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 \
-                /usr/bin/python3.13 /usr/bin/python3.12 /usr/bin/python3.11 \
-                /usr/bin/python3.10 /usr/bin/python3.9 /usr/bin/python3.8; do
-        if command -v "$cand" >/dev/null 2>&1; then
-            v="$(version_of "$cand")"
-            if [ -n "$v" ] && ver_ge "$v" "$MIN_PYTHON"; then
-                info "  · 装上并用 $cand（$v）"
-                use_python_candidate "$cand" && return 0
-            fi
+    # 装完先枚举一下到底有哪些解释器（下次出问题日志里能直接看到）
+    info "  · 系统里现有的 python3.x："
+    ls -1 /usr/bin/python3.* 2>/dev/null | sed -n '1,12p' | sed 's/^/      /' || true
+    command -v python3.11 >/dev/null 2>&1 && info "      （PATH 里也有 python3.11）"
+
+    for cand in python3.11 /usr/bin/python3.11 python3.9 /usr/bin/python3.9 \
+                python3.12 /usr/bin/python3.12 python3.10 /usr/bin/python3.10 \
+                python3.13 /usr/bin/python3.13 python3.8 /usr/bin/python3.8; do
+        bin_path="$(command -v "$cand" 2>/dev/null || true)"
+        [ -n "$bin_path" ] || continue
+        v="$("$bin_path" --version 2>&1 | sed -n 's/.*Python \([0-9][0-9.]*\).*/\1/p' | head -1)"
+        [ -n "$v" ] || continue
+        ver_ge "$v" "$MIN_PYTHON" || continue
+        info "  · 找到 $bin_path（$v）"
+        if ! "$bin_path" -c "import tkinter" >/dev/null 2>&1; then
+            warn "    但它没有 tkinter，跳过（PyInstaller 打包界面必需）"
+            continue
         fi
+        info "    且 tkinter 可用 ✅"
+        use_python_candidate "$cand" && return 0
     done
-    warn "  仍然没有 >= $MIN_PYTHON 的 python3，后面的打包步骤可能失败"
+    warn "  仍然没有 >= $MIN_PYTHON 的 python3（且带 tkinter），后面的打包步骤可能失败"
     return 1
 }
 
