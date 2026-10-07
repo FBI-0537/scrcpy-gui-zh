@@ -778,8 +778,11 @@ ensure_modern_python() {
     # 注意：**不要把输出丢掉** —— 装不上时必须能看见原因（包名/模块名在
     # RHEL 8 上很不统一：python3.11 是 module，tkinter 子包名也各不同）。
     if [ "$DISTRO_FAMILY" = "rhel" ] && command -v dnf >/dev/null 2>&1; then
-        for _pkg in "python3.11 python3.11-devel python3.11-tkinter" \
-                    "python3.9 python3.9-devel python3.9-tkinter"; do
+        # 注意带上 -pip / -setuptools：RHEL 的 python3.11 建 venv 时
+        # ensurepip 不可用（拆到 -pip 子包），没有 pip 就装不了 PyInstaller
+        for _pkg in "python3.11 python3.11-devel python3.11-tkinter python3.11-pip python3.11-setuptools" \
+                    "python3.9 python3.9-devel python3.9-tkinter python3.9-pip python3.9-setuptools" \
+                    "python3-pip python3-setuptools"; do
             info "    · dnf install $_pkg"
             # shellcheck disable=SC2086
             dnf -y install $_pkg 2>&1 | sed -n '1,8p' || true

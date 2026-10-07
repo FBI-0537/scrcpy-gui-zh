@@ -689,7 +689,29 @@ if [ ! -x "$BUILD_ROOT/venv/bin/python" ]; then
     fi
 fi
 VPY="$BUILD_ROOT/venv/bin/python"
-"$VPY" -m pip install --timeout 90 --retries 10 --quiet --upgrade pip wheel >/dev/null 2>&1 \
+PIP_USER=""
+
+# RHEL 8 的 python3.x 建出来的 venv 常常**没有 pip**（ensurepip 被拆到 -pip
+# 子包）→ 后面的 PyInstaller 就装不上。这里按顺序兜底，最后退回系统 python。
+if ! "$VPY" -m pip --version >/dev/null 2>&1; then
+    warn "虚拟环境里没有 pip（RHEL 的 python3.x 常见）→ 先试 ensurepip"
+    "$VPY" -m ensurepip --upgrade >/dev/null 2>&1 || true
+fi
+if ! "$VPY" -m pip --version >/dev/null 2>&1; then
+    warn "仍没有 pip → 补装 python3-pip / python3.11-pip 并重建虚拟环境"
+    pkg_install python3-pip >/dev/null 2>&1 || true
+    pkg_install python3.11-pip >/dev/null 2>&1 || true
+    rm -rf "$BUILD_ROOT/venv"
+    python3 -m venv "$BUILD_ROOT/venv" >/dev/null 2>&1 || true
+    "$VPY" -m ensurepip --upgrade >/dev/null 2>&1 || true
+fi
+if ! "$VPY" -m pip --version >/dev/null 2>&1; then
+    warn "虚拟环境还是不可用 → 退回系统 python3，PyInstaller 装到 --user"
+    VPY="python3"
+    PIP_USER="--user"
+fi
+
+"$VPY" -m pip install $PIP_USER --timeout 90 --retries 10 --quiet --upgrade pip wheel >/dev/null 2>&1 \
     || warn "升级 pip / wheel 失败，继续（多半不影响）"
 
 PYI_VER="$("$VPY" -m PyInstaller --version 2>/dev/null || true)"
@@ -697,11 +719,11 @@ if [ -z "$PYI_VER" ] || ! ver_ge "$PYI_VER" "$MIN_PYINSTALLER"; then
     info "安装/升级 PyInstaller（当前 ${PYI_VER:-未安装}，要求 ≥ $MIN_PYINSTALLER）…"
     # 不吞输出：pip 的报错一定要看得见（之前用 --quiet + 2>/dev/null，
     # 失败时只留下一句「版本未知」，完全无从排查）
-    if ! "$VPY" -m pip install --timeout 90 --retries 10 --upgrade pyinstaller; then
+    if ! "$VPY" -m pip install $PIP_USER --timeout 90 --retries 10 --upgrade pyinstaller; then
         PIP_FALLBACK="${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}"
         warn "默认 PyPI 源安装失败（国内常见：pypi.org 被代理的 fake-IP 卡住）"
         warn "改用国内镜像重试：$PIP_FALLBACK"
-        "$VPY" -m pip install --timeout 90 --retries 10 --upgrade \
+        "$VPY" -m pip install $PIP_USER --timeout 90 --retries 10 --upgrade \
             -i "$PIP_FALLBACK" \
             --trusted-host "$(printf '%s' "$PIP_FALLBACK" | sed -e 's|^https\?://||' -e 's|/.*$||')" \
             pyinstaller \
@@ -721,7 +743,7 @@ chk_ok "PyInstaller" "$PYI_VER（要求 ≥ $MIN_PYINSTALLER）"
 # 二维码渲染库：装不上也能跑，程序会退化成剪贴板提示
 if ! "$VPY" -c 'import segno' >/dev/null 2>&1; then
     info "安装二维码库 segno…"
-    "$VPY" -m pip install --timeout 90 --retries 10 --quiet segno \
+    "$VPY" -m pip install $PIP_USER --timeout 90 --retries 10 --quiet segno \
         || "$VPY" -m pip install --timeout 90 --retries 10 --quiet \
                -i "${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}" \
                --trusted-host "$(printf '%s' "${PIP_FALLBACK_INDEX:-http://mirrors.aliyun.com/pypi/simple/}" | sed -e 's|^https\?://||' -e 's|/.*$||')" \
