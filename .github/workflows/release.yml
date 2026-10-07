@@ -25,6 +25,12 @@ on:
           - fast
           - full
 
+# 同一分支/标签只保留最新一轮：我连续 push 修 bug 时不会堆叠多轮全矩阵
+# （tag 的运行不取消，那是正式发布）
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
 permissions:
   contents: write
 
@@ -206,8 +212,10 @@ jobs:
           cd logs-repo
           mkdir -p "logs/${{ matrix.label }}"
           cp /tmp/cilog/* "logs/${{ matrix.label }}/" 2>/dev/null || true
-          git checkout -b "ci-log-${{ matrix.label }}" 2>/dev/null || true
-          git add -A
+          # 用 orphan 分支 + 只加 logs/，避免把整个仓库都提交进日志分支
+          git checkout --orphan "ci-log-${{ matrix.label }}" 2>/dev/null || true
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f "logs/${{ matrix.label }}"
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "CI 日志：${{ matrix.label }}（run ${{ github.run_number }}）" || true
           git push -f origin "HEAD:ci-log-${{ matrix.label }}"
