@@ -94,6 +94,7 @@ AUTO_SCRCPY=0
 AUTO_ADB=1
 AUTO_DOWNLOAD=1
 ALLOW_OLD_ADB=0
+ONEDIR="${ONEDIR:-0}"
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -106,6 +107,7 @@ while [ "$#" -gt 0 ]; do
         --no-auto-adb) AUTO_ADB=0; shift ;;
         --no-auto-download) AUTO_DOWNLOAD=0; shift ;;
         --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
+        --onedir)      ONEDIR=1; shift ;;
         --scrcpy-version)
             [ "$#" -ge 2 ] || die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
             SCRCPY_VERSION="$2"; shift 2 ;;
@@ -1046,10 +1048,27 @@ fi
 ARTIFACT_NAME="$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG-$FEATURE_TAG"
 info "功能档位：$FEATURE_TAG（内嵌 adb $(adb_version_text "$ADB_BIN")）"
 
-OUT="$DIST_DIR/$ARTIFACT_NAME"
-rm -f "$OUT"
+if [ "$ONEDIR" -eq 1 ]; then
+    OUT="$DIST_DIR/$ARTIFACT_NAME-dir/$ARTIFACT_NAME"
+    rm -rf "$DIST_DIR/$ARTIFACT_NAME-dir" "$DIST_DIR/$ARTIFACT_NAME-dir.tar.gz"
+else
+    OUT="$DIST_DIR/$ARTIFACT_NAME"
+    rm -f "$OUT"
+fi
 rm -rf "$BUILD_ROOT/pyiwork" "$BUILD_ROOT/pyispec"
 
+if [ "$ONEDIR" -eq 1 ]; then
+    # 目录版：不解压，启动即用（低内存设备用这个）
+    info "打包方式：目录版（--onedir，启动不解压，适合低内存设备）"
+    PYI_ARGS=(
+        --noconfirm --clean --onedir
+        --name "$ARTIFACT_NAME"
+        --distpath "$DIST_DIR"
+        --workpath "$BUILD_ROOT/pyiwork"
+        --specpath "$BUILD_ROOT/pyispec"
+        --hidden-import tkinter
+    )
+else
 PYI_ARGS=(
     --noconfirm --clean --onefile
     --name "$ARTIFACT_NAME"
@@ -1063,6 +1082,7 @@ PYI_ARGS=(
     # 用户仍可用环境变量覆盖：TMPDIR=/your/disk/path ./产物
     --runtime-tmpdir /var/tmp
 )
+fi
 # scrcpy / adb 及其依赖库全部塞进 _MEIPASS 根目录
 info "内嵌 scrcpy、adb 与 $LIBN 个依赖库…"
 PYI_ARGS+=(--add-binary "$SCRCPY_BIN:.")
@@ -1191,6 +1211,8 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
     printf '\n【使用方法】\n'
     printf '  chmod +x %s\n' "$BASE_OUT"
     printf '  ./%s                 # 开界面\n' "$BASE_OUT"
+    printf '  ./%s --cli           # 命令行模式：列设备（低内存设备推荐）\n' "$BASE_OUT"
+    printf '  ./%s --cli --serial <序列号>   # 命令行直接投屏\n' "$BASE_OUT"
     printf '  ./%s --selftest      # 只查内嵌组件是否完好\n' "$BASE_OUT"
     printf '\n【内存与磁盘要求（低配设备重要）】\n'
     printf '  内存：建议 >= 1.5 GB 可用。单文件包启动会先把自己解压出来\n'

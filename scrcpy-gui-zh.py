@@ -2840,7 +2840,81 @@ def selftest():
     return 0 if ok else 1
 
 
+CLI_HELP = """scrcpy 手机投屏 · 命令行模式（不启动图形界面，适合低内存设备）
+
+用法：
+  产物 --cli                     列出当前设备
+  产物 --cli --serial <序列号>   直接投屏（其余参数原样交给 scrcpy）
+  产物 --cli --serial <序列号> --max-size 800 --video-bit-rate 4M
+  产物 --selftest                检查内嵌组件是否完好
+  产物 --version                 版本信息
+
+说明：
+  · 命令行模式不加载 Tk 界面，比图形模式省约 40-60 MB 内存，也更省 CPU
+  · 不认识的参数会**原样传给 scrcpy**，scrcpy 的选项都能直接用
+  · 按 Ctrl+C 结束投屏
+"""
+
+
+def cli_main(argv):
+    """命令行模式。返回进程退出码。"""
+    serial = ""
+    passthrough = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--help", "-h"):
+            print(CLI_HELP)
+            return 0
+        if a in ("--serial", "-s"):
+            if i + 1 >= len(argv):
+                print("错误：--serial 后面要跟设备序列号", file=sys.stderr)
+                return 2
+            serial = argv[i + 1]
+            i += 2
+            continue
+        passthrough.append(a)
+        i += 1
+
+    if not ADB:
+        print("错误：找不到 adb（本产物的内嵌 adb 可能损坏）", file=sys.stderr)
+        return 2
+
+    devices = adb_devices()
+    if not devices:
+        print("没有检测到设备。请检查：数据线 / USB 调试授权 / 无线连接是否已建立。",
+              file=sys.stderr)
+        return 1
+
+    if not serial:
+        print("检测到 %d 台设备：" % len(devices))
+        for d_serial, state, model in devices:
+            print("  %-16s %-18s %s" % (d_serial, STATE_ZH.get(state, state), model or ""))
+        print()
+        print("投屏：产物 --cli --serial <序列号>")
+        return 0
+
+    if not SCRCPY:
+        print("错误：找不到 scrcpy（本产物的内嵌 scrcpy 可能损坏）", file=sys.stderr)
+        return 2
+
+    cmd = [SCRCPY, "-s", serial] + passthrough
+    print("$ " + " ".join(cmd))
+    sys.stdout.flush()
+    # 命令行模式要独占终端、把 scrcpy 的输出实时透出来（Ctrl+C 能结束）
+    try:
+        return subprocess.call(cmd, env=child_env())
+    except KeyboardInterrupt:
+        return 130
+    except OSError as exc:
+        print("启动 scrcpy 失败：%s" % exc, file=sys.stderr)
+        return 1
+
+
 def main():
+    if "--cli" in sys.argv:
+        # 命令行模式：不创建 Tk（低内存设备的关键）
+        sys.exit(cli_main([a for a in sys.argv[1:] if a != "--cli"]))
     if "--selftest" in sys.argv:
         sys.exit(selftest())
     if "--version" in sys.argv:

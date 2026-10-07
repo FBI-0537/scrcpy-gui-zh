@@ -218,7 +218,10 @@ def check(path):
 # 它们跟可执行文件一起发布，但不是 ELF/PE，不能按产物去校验 ——
 # 否则「每个文件都必须是可执行文件」这条会把它们判失败。
 COMPANION_EXT = ('.txt', '.md', '.json', '.sha256', '.sha256sum',
-                 '.sig', '.asc', '.sums', '.log')
+                 '.sig', '.asc', '.sums', '.log', '.gz', '.xz', '.zip',
+                 '.tar')
+# 目录版（--onedir）打成 .tar.gz 发布，里面是可执行文件目录；
+# 它由构建时的容器内自检（--selftest）保证，这里不按 ELF 校验。
 
 
 def is_companion(name):
