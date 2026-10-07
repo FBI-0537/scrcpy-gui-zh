@@ -351,12 +351,23 @@ jobs:
       - name: 生成校验和
         run: |
           cd assets
-          sha256sum * > SHA256SUMS.txt
+          # 只对文件算校验和：产物里有一个目录版解压出来的目录，
+          # 直接 sha256sum * 会报 "Is a directory" 并让这一步失败。
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%P\n' \
+            | sort | xargs -r sha256sum > SHA256SUMS.txt
+          echo "--- assets ---"
           ls -lh
+          echo "--- SHA256SUMS.txt ---"
+          cat SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: assets/*
+          # 只传文件：目录版解压出来的目录不能作为 Release 资产
+          files: |
+            assets/*.tar.gz
+            assets/*.txt
+            assets/*.exe
+            assets/SHA256SUMS.txt
           generate_release_notes: true
           fail_on_unmatched_files: false
           body: |

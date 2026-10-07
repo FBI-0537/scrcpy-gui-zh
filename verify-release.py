@@ -153,6 +153,64 @@ def scan_components(path, fmt):
     return found, libs, has_cookie, data
 
 
+def check_bundle(bundle_dir, exe_path, fmt, want_arch, ok):
+    """目录版（--onedir）的验收：组件是真实文件，按文件名核对。
+
+    目录版没有 MEI cookie（那是单文件包专属），所以不能沿用 check() 的
+    字节扫描，改为看目录里到底有没有这些文件。
+    """
+    names = []
+    n_dirs = 0
+    for root, dirs, fs in os.walk(bundle_dir):
+        names.extend(fs)
+        n_dirs += len(dirs)
+    lower = [n.lower() for n in names]
+
+    # 替代 cookie 的标记
+    has_internal = os.path.isdir(os.path.join(bundle_dir, '_internal'))
+    has_pyz = any(n.startswith('pyz-00.pyz') for n in lower)
+    has_base = any(n == 'base_library.zip' for n in lower)
+    if has_internal or has_pyz or has_base:
+        print('  [OK]   目录版结构完整（_internal=%s, PYZ=%s, base_library=%s）'
+              % ('有' if has_internal else '无',
+                 '有' if has_pyz else '无',
+                 '有' if has_base else '无'))
+    else:
+        print('  [失败] 既没有 _internal 也没有 PYZ —— 不像 PyInstaller 目录版')
+        ok = False
+
+    want_files = (
+        ('scrcpy', ('scrcpy',)),
+        ('adb', ('adb',)),
+        ('scrcpy-server', ('scrcpy-server', 'scrcpy_server')),
+        ('udev 安装脚本', ('install-udev.sh',)),
+    )
+    for label, needles in want_files:
+        if any(n == x or n.startswith(x) for n in lower for x in needles):
+            print('  [OK]   目录内含 %s' % label)
+        else:
+            print('  [失败] 目录里找不到 %s' % label)
+            ok = False
+
+    libs = [n for n in names if '.so' in n.lower() or n.lower().endswith('.dll')]
+    if len(libs) >= 3:
+        print('  [OK]   依赖库 %d 个（依赖收集生效）' % len(libs))
+    elif libs:
+        print('  [注意] 依赖库只有 %d 个，可能没收集全' % len(libs))
+    else:
+        print('  [失败] 一个依赖库都没有 —— 依赖可能没打进去')
+        ok = False
+
+    if libs:
+        print('  目录内库/可执行文件清单（%d 个，最多列 24 个）：' % len(libs))
+        for n in sorted(libs)[:24]:
+            print('        %s' % n)
+
+    print('  可执行文件：%s' % os.path.basename(exe_path))
+    print('  结论：%s' % ('通过' if ok else '不通过'))
+    return ok
+
+
 def check(path):
     name = os.path.basename(path)
     size = os.path.getsize(path)
@@ -178,6 +236,13 @@ def check(path):
         ok = False
     else:
         print('  [OK]   架构与文件名一致（%s）' % arch)
+
+    # 目录版（--onedir）：可执行文件与依赖同目录，没有 MEI cookie，
+    # 按真实文件名核对（这里是 <名称>/<名称> 布局）
+    bundle_dir = os.path.dirname(path)
+    if os.path.basename(bundle_dir) == name and os.path.isdir(bundle_dir):
+        print('  形态：目录版（--onedir，解压即用）')
+        return check_bundle(bundle_dir, path, fmt, want, ok)
 
     found, libs, has_cookie, data = scan_components(path, fmt)
     if has_cookie:
