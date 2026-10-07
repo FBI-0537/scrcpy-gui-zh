@@ -1,4 +1,16 @@
 ### 新增
+- **`glibc2.28-x86_64-full`**：覆盖 RHEL / Rocky / Alma **8 系**（官方支持到 2029）、
+  Ubuntu 18.04、Debian 10 等更老的 x86_64 系统，功能与 `-full` 一致（内嵌 Google
+  官方 adb 37，配对码/二维码可用）。
+  难点在于这些系统自带 FFmpeg ≤ 4.1，而现代 scrcpy 要求 ≥ 4.3 —— 所以构建脚本新增：
+    * `ensure_modern_ffmpeg()`：FFmpeg 太旧时源码编译 FFmpeg 6.1.2 到 `vendor/ffmpeg`
+      （只编库；nasm 缺失则 `--disable-x86asm`），编出的 `.so` 一并打进产物，
+      目标机无需安装 FFmpeg
+    * `ensure_modern_python()`：老发行版自带 python3 可能只有 3.6，改用发行版提供的
+      python3.11/3.9 等并用软链顶上
+  基础镜像选 `rockylinux:8`（glibc 2.28，仓库健康）。
+
+### 新增
 - **每个架构明确分两档，档位写进产物名**：`<app>-<ver>-linux-glibc<ver>-<arch>-<full|basic>`
   * `-full`：内嵌 adb ≥ 30，**有**配对码 / 二维码
   * `-basic`：内嵌 adb 太旧，这两个功能在界面上不显示（界面会写明原因与替代方案），
