@@ -1,0 +1,25 @@
+tag=v1.0.1
+run=41
+job_status=success
+--- assets ---
+total 418M
+-rw-r--r-- 1 runner runner 1.6K Oct  7 23:38 SHA256SUMS.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.28-x86_64-full
+-rw-r--r-- 1 runner runner  26M Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.28-x86_64-full.tar.gz
+-rw-r--r-- 1 runner runner 3.2K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.28-x86_64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-aarch64-basic
+-rw-r--r-- 1 runner runner  76M Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-aarch64-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-aarch64-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-armv7l-basic
+-rw-r--r-- 1 runner runner  71M Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-armv7l-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-armv7l-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-x86_64-full
+-rw-r--r-- 1 runner runner  29M Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-x86_64-full.tar.gz
+-rw-r--r-- 1 runner runner 3.2K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.31-x86_64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.36-aarch64-basic
+-rw-r--r-- 1 runner runner 101M Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.36-aarch64-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.36-aarch64-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.36-armv7l-basic
+-rw-r--r-- 1 runner runner  93M Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.36-armv7l-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  7 23:38 scrcpy-gui-zh-1.0.1-linux-glibc2.36-armv7l-basic.txt
+-rw-r--r-- 1 runner runner  25M Oct  7 23:38 scrcpy-gui-zh-1.0.1-windows-x86_64.exe
