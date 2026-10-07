@@ -171,7 +171,20 @@ jobs:
           exit "$rc"
 
       - name: 验收产物（架构是否与文件名一致、组件是否齐全）
-        run: python3 verify-release.py dist/
+        shell: bash
+        run: |
+          set +e
+          python3 verify-release.py dist/ 2>&1 | tee verify.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo "## 验收失败（退出码 $rc）"
+              echo '```'
+              tail -40 verify.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $rc
 
       - uses: actions/upload-artifact@v4
         with:
@@ -238,7 +251,17 @@ jobs:
           Write-Host "产物：$dst"
 
       - name: 验收产物
-        run: python verify-release.py dist
+        shell: pwsh
+        run: |
+          python verify-release.py dist 2>&1 | Tee-Object -FilePath verify-win.log
+          if ($LASTEXITCODE -ne 0) {
+            $sum = $env:GITHUB_STEP_SUMMARY
+            "## 验收失败（退出码 $LASTEXITCODE）" | Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+            (Get-Content verify-win.log -Tail 40 | Out-String) | Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+            throw "验收失败"
+          }
 
       - uses: actions/upload-artifact@v4
         with:

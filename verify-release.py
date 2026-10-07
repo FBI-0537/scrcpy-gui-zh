@@ -238,7 +238,11 @@ def collect(targets):
     companions = []
     for t in targets:
         if os.path.isdir(t):
-            for root, _dirs, names in os.walk(t):
+            for root, dirs, names in os.walk(t):
+                # 剪掉 --onedir 产出目录（<名称>-dir/）：里面是运行时的文件树，
+                # 不是"产物文件"，逐个校验会全部误判失败（构建其实都成功了）。
+                # 这些目录由构建时的容器内 --selftest 保证。
+                dirs[:] = [d for d in dirs if not d.endswith('-dir')]
                 for n in names:
                     full = os.path.join(root, n)
                     (companions if is_companion(n) else files).append(full)
@@ -251,7 +255,60 @@ def collect(targets):
     return files, companions
 
 
+def self_test():
+    """用合成目录校验"哪些算产物、哪些算附带"的分类逻辑。
+
+    防的是这类事故：改了 dist/ 的产出布局（例如新增 --onedir 目录版），
+    却忘了同步验收脚本 → 发布验收全红，而且只有跑一轮 CI 才发现。
+    用法：python3 verify-release.py --self-test
+    """
+    import shutil
+
+    base = os.path.join(os.getcwd(), "_vr_selftest")
+    shutil.rmtree(base, ignore_errors=True)
+    dist = os.path.join(base, "dist")
+    os.makedirs(os.path.join(dist, "demo-dir", "lib"), exist_ok=True)
+
+    # 目录版里的运行时文件（不该被当成产物）
+    for rel in (("demo-dir", "demo"), ("demo-dir", "lib", "libx.so.1")):
+        with open(os.path.join(dist, *rel), "wb") as fh:
+            fh.write(b"\x7fELF" + b"\x00" * 60)
+    # 附带文件
+    with open(os.path.join(dist, "demo.txt"), "w", encoding="utf-8") as fh:
+        fh.write("说明")
+    with open(os.path.join(dist, "demo-dir.tar.gz"), "wb") as fh:
+        fh.write(b"\x1f\x8b" + b"\x00" * 20)
+    with open(os.path.join(dist, "SHA256SUMS.txt"), "w", encoding="utf-8") as fh:
+        fh.write("deadbeef  demo\n")
+
+    files, companions = collect([dist])
+    problems = []
+    leaked = [f for f in files if "-dir" + os.sep in f]
+    if leaked:
+        problems.append("目录版里的文件被当成产物：%s" % leaked)
+    if os.path.join(dist, "demo.txt") not in companions:
+        problems.append("demo.txt 应算附带文件")
+    if os.path.join(dist, "demo-dir.tar.gz") not in companions:
+        problems.append("demo-dir.tar.gz 应算附带文件")
+    if os.path.join(dist, "SHA256SUMS.txt") not in companions:
+        problems.append("SHA256SUMS.txt 应算附带文件")
+
+    shutil.rmtree(base, ignore_errors=True)
+
+    if problems:
+        print("自检失败：")
+        for p in problems:
+            print("  · %s" % p)
+        return 1
+    print("自检通过：产物 %d 个、附带 %d 个，分类正确"
+          % (len(files), len(companions)))
+    return 0
+
+
 def main(argv):
+
+    if "--self-test" in argv:
+        return self_test()
     if not argv:
         print(__doc__)
         return 2
