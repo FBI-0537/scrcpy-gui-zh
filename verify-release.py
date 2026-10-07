@@ -239,10 +239,20 @@ def collect(targets):
     for t in targets:
         if os.path.isdir(t):
             for root, dirs, names in os.walk(t):
-                # 剪掉 --onedir 产出目录（<名称>-dir/）：里面是运行时的文件树，
-                # 不是"产物文件"，逐个校验会全部误判失败（构建其实都成功了）。
-                # 这些目录由构建时的容器内 --selftest 保证。
-                dirs[:] = [d for d in dirs if not d.endswith('-dir')]
+                # 目录版（--onedir）的解压结果：<名称>/<名称> 是可执行文件，
+                # 同目录下还有依赖库、内嵌的 scrcpy/adb 等。
+                #   → 只把「与目录同名的那个可执行文件」当产物校验，
+                #     不进目录里逐个校验（否则几百个文件全部误判失败；
+                #     实测连续两轮把 6 个目标搞成全红）。
+                # 目录内容的正确性由构建时的容器内 --selftest 保证。
+                for d in list(dirs):
+                    if d.endswith('-dir'):
+                        dirs.remove(d)
+                        continue
+                    main = os.path.join(root, d, d)
+                    if os.path.isfile(main):
+                        files.append(main)
+                        dirs.remove(d)
                 for n in names:
                     full = os.path.join(root, n)
                     (companions if is_companion(n) else files).append(full)
@@ -286,6 +296,18 @@ def self_test():
     leaked = [f for f in files if "-dir" + os.sep in f]
     if leaked:
         problems.append("目录版里的文件被当成产物：%s" % leaked)
+    # 新布局：<名称>/<名称> 是产物，其余不该进名单
+    os.makedirs(os.path.join(dist, "app-x"), exist_ok=True)
+    with open(os.path.join(dist, "app-x", "app-x"), "wb") as fh:
+        fh.write(b"\x7fELF" + b"\x00" * 60)
+    with open(os.path.join(dist, "app-x", "liby.so.1"), "wb") as fh:
+        fh.write(b"\x7fELF" + b"\x00" * 60)
+    files2, _c2 = collect([dist])
+    names2 = [os.path.basename(x) for x in files2]
+    if "app-x" not in names2:
+        problems.append("目录版主可执行文件没被识别为产物：%s" % names2)
+    if "liby.so.1" in names2:
+        problems.append("目录版里的依赖库被当成产物：%s" % names2)
     if os.path.join(dist, "demo.txt") not in companions:
         problems.append("demo.txt 应算附带文件")
     if os.path.join(dist, "demo-dir.tar.gz") not in companions:

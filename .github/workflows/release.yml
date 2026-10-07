@@ -54,13 +54,13 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
           fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
-                                                                                          full='{"include":[
-            {"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy --onedir"},
-            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy --onedir"},
-            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb --onedir"},
-            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb --onedir"},
-            {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy --allow-old-adb --onedir"},
-            {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy --allow-old-adb --onedir"}
+                                                                                                    full='{"include":[
+            {"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy"},
+            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"},
+            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy --allow-old-adb"},
+            {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy --allow-old-adb"}
           ]}'
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then

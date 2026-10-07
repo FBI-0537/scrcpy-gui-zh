@@ -94,7 +94,7 @@ AUTO_SCRCPY=0
 AUTO_ADB=1
 AUTO_DOWNLOAD=1
 ALLOW_OLD_ADB=0
-ONEDIR="${ONEDIR:-0}"
+ONEDIR="${ONEDIR:-1}"   # 默认产出目录版（解压即用，启动不自解压）
 SCRCPY_VERSION="${SCRCPY_VERSION:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -108,6 +108,7 @@ while [ "$#" -gt 0 ]; do
         --no-auto-download) AUTO_DOWNLOAD=0; shift ;;
         --allow-old-adb) ALLOW_OLD_ADB=1; shift ;;
         --onedir)      ONEDIR=1; shift ;;
+        --onefile)     ONEDIR=0; shift ;;   # 旧行为：自解压单文件（CI 不再用）
         --scrcpy-version)
             [ "$#" -ge 2 ] || die "--scrcpy-version 后面要跟版本号，例如：--scrcpy-version 4.1"
             SCRCPY_VERSION="$2"; shift 2 ;;
@@ -1057,11 +1058,14 @@ fi
 ARTIFACT_NAME="$APP_ID-$APP_VER-linux-glibc$GLIBC_VER-$ARCH_TAG-$FEATURE_TAG"
 info "功能档位：$FEATURE_TAG（内嵌 adb $(adb_version_text "$ADB_BIN")）"
 
-# 主产物：单文件版（一个文件拿走，用户最初的诉求）
-OUT="$DIST_DIR/$ARTIFACT_NAME"
-ONEDIR_OUT="$DIST_DIR/$ARTIFACT_NAME-dir"
-rm -f "$OUT"
-rm -rf "$ONEDIR_OUT" "$ONEDIR_OUT.tar.gz"
+# 默认：目录版（解压即用，启动不自解压）。--onefile 才做旧式单文件。
+if [ "$ONEDIR" -eq 1 ]; then
+    OUT="$DIST_DIR/$ARTIFACT_NAME/$ARTIFACT_NAME"
+    rm -rf "$DIST_DIR/$ARTIFACT_NAME" "$DIST_DIR/$ARTIFACT_NAME.tar.gz"
+else
+    OUT="$DIST_DIR/$ARTIFACT_NAME"
+    rm -f "$OUT"
+fi
 rm -rf "$BUILD_ROOT/pyiwork" "$BUILD_ROOT/pyispec"
 
 # 公共参数；模式由后面的 --onefile / --onedir 决定
@@ -1088,45 +1092,33 @@ PYI_ARGS+=(--add-data "$SERVER_SRC:share/scrcpy")
 PYI_ARGS+=(--add-data "$UDEV_SRC:.")
 PYI_ARGS+=("$GUI_PY")
 
-# ① 单文件版。
-#    --runtime-tmpdir：单文件包启动要解压自己（100+ MB），而很多开发板 / 掌机
-#    的 /tmp 是 tmpfs（占内存），解压会把 RAM 塞爆导致整机卡死。指到 /var/tmp
-#    （磁盘）；不可写时 PyInstaller 会自动回退 /tmp。也可用 TMPDIR=… 覆盖。
-if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" --onefile \
-        --runtime-tmpdir /var/tmp >/dev/null; then
-    die "PyInstaller 打包失败（单文件版），请把上面的报错发出来"
-fi
-if [ ! -f "$OUT" ]; then
-    die "没有生成 $OUT"
-fi
-chmod +x "$OUT"
-info "已生成单文件版：$OUT（$(du -h "$OUT" | cut -f1)）"
-
-# ② 目录版（--onedir）：**所有版本都产出**。启动不解压，省掉 100+ MB 临时
-#    空间与启动内存峰值，低内存设备（开发板 / 掌机）用这个更稳。
 if [ "$ONEDIR" -eq 1 ]; then
-    info "另外打包目录版（启动不解压，适合低内存设备）…"
-    # ⚠️ 必须换一个 --name！用同一个名字时 PyInstaller 的 --onedir 会
-    # **先删掉同名产物再建同名目录**，把刚做好的单文件版覆盖掉，
-    # 结果自检报 "Is a directory"（实测踩过，6 个目标全挂）。
-    PYI_ARGS_DIR=("${PYI_ARGS[@]}")
-    for _i in "${!PYI_ARGS_DIR[@]}"; do
-        if [ "${PYI_ARGS_DIR[$_i]}" = "--name" ]; then
-            PYI_ARGS_DIR[$((_i + 1))]="$ARTIFACT_NAME-dir"
-        fi
-    done
-    if ! "$VPY" -m PyInstaller "${PYI_ARGS_DIR[@]}" --onedir >/dev/null; then
-        warn "目录版打包失败（不影响单文件版）"
-    elif [ ! -x "$ONEDIR_OUT/$ARTIFACT_NAME" ]; then
-        warn "目录版没有生成可执行文件（不影响单文件版）"
-    else
-        info "已生成目录版：$ONEDIR_OUT"
-        if tar -czf "$ONEDIR_OUT.tar.gz" -C "$DIST_DIR" "$ARTIFACT_NAME-dir" 2>/dev/null; then
-            info "已生成目录版压缩包：$ONEDIR_OUT.tar.gz（$(du -h "$ONEDIR_OUT.tar.gz" | cut -f1)）"
-        else
-            warn "目录版打成 tar.gz 失败（不影响 -dir 目录本身）"
-        fi
+    # 目录版：解压即用，启动**不自解压** —— 没有临时空间与启动内存峰值问题，
+    # 低内存设备（开发板 / 掌机）用这个最稳。这是默认形态。
+    info "打包：目录版（解压即用）…"
+    if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" --onedir >/dev/null; then
+        die "PyInstaller 打包失败（目录版），请把上面的报错发出来"
     fi
+    [ -x "$OUT" ] || die "没有生成 $OUT"
+    info "已生成目录：$DIST_DIR/$ARTIFACT_NAME"
+    if ! tar -czf "$DIST_DIR/$ARTIFACT_NAME.tar.gz" \
+            -C "$DIST_DIR" "$ARTIFACT_NAME" 2>/dev/null; then
+        die "打包成 tar.gz 失败：$DIST_DIR/$ARTIFACT_NAME.tar.gz"
+    fi
+    info "已打包：$DIST_DIR/$ARTIFACT_NAME.tar.gz（$(du -h "$DIST_DIR/$ARTIFACT_NAME.tar.gz" | cut -f1)）"
+else
+    # 旧式单文件（--onefile）：一个文件，但启动要自解压。
+    # --runtime-tmpdir：很多开发板 / 掌机的 /tmp 是 tmpfs（占内存），解压会把
+    # RAM 塞爆导致整机卡死；指到 /var/tmp（磁盘），不可写时自动回退 /tmp。
+    # 也可用 TMPDIR=… 覆盖。
+    info "打包：单文件版（--onefile，启动会自解压）…"
+    if ! "$VPY" -m PyInstaller "${PYI_ARGS[@]}" --onefile \
+            --runtime-tmpdir /var/tmp >/dev/null; then
+        die "PyInstaller 打包失败（单文件版），请把上面的报错发出来"
+    fi
+    [ -f "$OUT" ] || die "没有生成 $OUT"
+    chmod +x "$OUT"
+    info "已生成单文件版：$OUT（$(du -h "$OUT" | cut -f1)）"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1135,19 +1127,13 @@ fi
 step "5/6 自检（实际运行产物，确认内嵌的 scrcpy / adb / server 都可用）"
 
 if "$OUT" --selftest; then
-    info "单文件版自检通过"
+    info "自检通过"
 else
     die "自检失败：产物内嵌的组件有问题，不交付。
      请把上面的输出发出来（常见原因是依赖库没收集全）。"
 fi
 
-if [ "$ONEDIR" -eq 1 ] && [ -x "$ONEDIR_OUT/$ARTIFACT_NAME" ]; then
-    if "$ONEDIR_OUT/$ARTIFACT_NAME" --selftest >/dev/null; then
-        info "目录版自检通过"
-    else
-        die "目录版自检失败：$ONEDIR_OUT"
-    fi
-fi
+
 
 # ---------------------------------------------------------------------------
 # 6. 完成
