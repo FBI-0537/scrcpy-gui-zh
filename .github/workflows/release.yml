@@ -440,3 +440,31 @@ jobs:
               `sudo apt install libgl1-mesa-dri mesa-utils`；
               没有 3D 加速时程序会自动改用软件渲染重试一次
             - **不需要**安装 adb、scrcpy、Python —— 都已经打包在里面
+
+      - name: 标记已发布（便于无人值守确认，不需要 GitHub API）
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/rel
+          {
+            echo "tag=${{ github.ref_name }}"
+            echo "run=${{ github.run_number }}"
+            echo "job_status=${{ job.status }}"
+            echo "--- assets ---"
+            ls -lh "$GITHUB_WORKSPACE/assets" 2>/dev/null || echo "(没有 assets 目录)"
+          } > /tmp/rel/info.txt
+          cd /tmp
+          rm -rf rel-repo
+          git clone --depth 1 \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" rel-repo
+          cd rel-repo
+          mkdir -p released
+          cp /tmp/rel/info.txt "released/${{ github.ref_name }}.txt"
+          git checkout --orphan "released-${{ github.ref_name }}" 2>/dev/null || true
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f released
+          git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+            commit -m "发布标记：${{ github.ref_name }}（run ${{ github.run_number }}）" || true
+          git push -f origin "HEAD:released-${{ github.ref_name }}"
