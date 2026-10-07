@@ -8,6 +8,7 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -53,20 +54,15 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-          fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
-                                                                                                    full='{"include":[
-            {"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"},
-            {"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy --allow-old-adb"},
-            {"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy --allow-old-adb"}
-          ]}'
+                    fast='{"include":[{"image":"debian:12","platform":"linux/amd64","label":"glibc2.36-x86_64","extra":"--auto-scrcpy"}]}'
+          full='{"include":[{"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy"},{"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"},{"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy--allow-old-adb"},{"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy--allow-old-adb"},{"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy--allow-old-adb"},{"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy--allow-old-adb"}]}'
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             mode="full"
-          else
+          elif [ -n "${{ github.event.inputs.mode }}" ]; then
             mode="${{ github.event.inputs.mode }}"
+          else
+            mode="full"      # 推 main（非手动触发）：跑全矩阵，便于自动排查
           fi
           if [ "$mode" = "fast" ]; then
             echo "matrix=$fast" >> "$GITHUB_OUTPUT"
@@ -186,8 +182,8 @@ jobs:
           fi
           exit $rc
 
-      - name: 失败时把日志回传到 ci-log-<label> 分支（无人值守排查用）
-        if: failure()
+      - name: 把状态与日志回传到 ci-log-<label> 分支（无人值守排查用）
+        if: always()
         shell: bash
         continue-on-error: true
         run: |
@@ -197,6 +193,12 @@ jobs:
           for f in build.log verify.log; do
             [ -f "$f" ] && cp "$f" /tmp/cilog/ || true
           done
+          {
+            echo "label=${{ matrix.label }}"
+            echo "status=${{ job.status }}"
+            echo "run=${{ github.run_number }}"
+            echo "ref=${{ github.ref_name }}"
+          } > /tmp/cilog/status.txt
           cd /tmp
           rm -rf logs-repo
           git clone --depth 1 \
@@ -287,8 +289,8 @@ jobs:
             throw "验收失败"
           }
 
-      - name: 失败时把日志回传（无人值守排查用）
-        if: failure()
+      - name: 把状态与日志回传（无人值守排查用）
+        if: always()
         continue-on-error: true
         shell: bash
         run: |
@@ -297,6 +299,12 @@ jobs:
           [ -f "$GITHUB_STEP_SUMMARY" ] && cp "$GITHUB_STEP_SUMMARY" /tmp/cilog/summary.md || true
           [ -f build-win.log ] && cp build-win.log /tmp/cilog/ || true
           [ -f verify-win.log ] && cp verify-win.log /tmp/cilog/ || true
+          {
+            echo "label=windows-x86_64"
+            echo "status=${{ job.status }}"
+            echo "run=${{ github.run_number }}"
+            echo "ref=${{ github.ref_name }}"
+          } > /tmp/cilog/status.txt
           cd /tmp
           rm -rf logs-repo
           git clone --depth 1 \
