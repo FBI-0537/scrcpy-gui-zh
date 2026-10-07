@@ -1,0 +1,26 @@
+# Python 构建产物
+__pycache__/
+*.py[cod]
+build-linux/
+build/
+dist/
+*.spec
+
+# Windows 构建脚本自动下载的 scrcpy（约 40MB，不入库）
+vendor/
+
+# 虚拟环境
+venv/
+.venv/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 本地发布暂存目录（二进制走 GitHub Release 资产，不进版本库）
+release/

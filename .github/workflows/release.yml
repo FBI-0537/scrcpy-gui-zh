@@ -1,0 +1,441 @@
+name: Release
+
+# 打 tag（v1.0.0）→ 自动构建全矩阵 → 验收 → 上传到 GitHub Release 资产
+# 也可以手动触发（Actions → Release → Run workflow）：
+#   mode=fast  只构建 1 个 x86_64 目标（约 20 分钟），用来验证流水线
+#   mode=full  构建全部 6 个 Linux 目标 + Windows（ARM 走 QEMU，很慢）
+# 手动触发只上传 artifact，不发布 Release（发布只在打 tag 时发生）
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（不含 v），例如 1.0.0"
+        required: true
+        default: "1.0.0"
+      mode:
+        description: "构建范围"
+        required: true
+        default: "fast"
+        type: choice
+        options:
+          - fast
+          - full
+
+# 同一分支/标签只保留最新一轮：我连续 push 修 bug 时不会堆叠多轮全矩阵
+# （tag 的运行不取消，那是正式发布）
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 先算出这次要构建哪些目标
+  #
+  # 为什么 Linux 目标都带 --auto-scrcpy：
+  #   scrcpy 在 Debian 11/12、Ubuntu 的仓库里要么没有、要么低于 2.2（投不了
+  #   Android 14+）；从 Debian/Ubuntu 归档下载现成的 .deb 又常因 glibc 不匹配
+  #   跑不起来。所以必须让构建脚本自己源码编译 scrcpy 到 vendor/。
+  # ---------------------------------------------------------------------------
+  plan:
+    name: 规划构建目标
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      version: ${{ steps.gen.outputs.version }}
+    steps:
+      - id: gen
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            ver="${GITHUB_REF_NAME#v}"
+          else
+            ver="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+                    fast='{"include":[{"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"}]}'
+          full='{"include":[{"image":"rockylinux:8","platform":"linux/amd64","label":"glibc2.28-x86_64-full","extra":"--auto-scrcpy"},{"image":"ubuntu:20.04","platform":"linux/amd64","label":"glibc2.31-x86_64-full","extra":"--auto-scrcpy"},{"image":"ubuntu:20.04","platform":"linux/arm64","label":"glibc2.31-aarch64-basic","extra":"--auto-scrcpy --allow-old-adb"},{"image":"debian:12","platform":"linux/arm64","label":"glibc2.36-aarch64-full","extra":"--auto-scrcpy --allow-old-adb"},{"image":"ubuntu:20.04","platform":"linux/arm/v7","label":"glibc2.31-armv7l-basic","extra":"--auto-scrcpy --allow-old-adb"},{"image":"debian:12","platform":"linux/arm/v7","label":"glibc2.36-armv7l-full","extra":"--auto-scrcpy --allow-old-adb"}]}'
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            mode="full"
+          elif [ -n "${{ github.event.inputs.mode }}" ]; then
+            mode="${{ github.event.inputs.mode }}"
+          else
+            mode="full"      # 推 main（非手动触发）：跑全矩阵，便于自动排查
+          fi
+          if [ "$mode" = "fast" ]; then
+            echo "matrix=$fast" >> "$GITHUB_OUTPUT"
+          else
+            # 多行 JSON 需要转成单行放进 GITHUB_OUTPUT
+            printf 'matrix=%s\n' "$(printf '%s' "$full" | tr -d '\n')" >> "$GITHUB_OUTPUT"
+          fi
+          echo "本次模式：$mode"
+
+  # ---------------------------------------------------------------------------
+  # Linux：在容器里构建，用最老的发行版拿到最广的兼容面
+  # ---------------------------------------------------------------------------
+  linux:
+    name: Linux ${{ matrix.label }}
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ARM 架构靠 QEMU 模拟（GitHub 托管的 runner 需要这一步）
+      - uses: docker/setup-qemu-action@v3
+
+      # 先把「脚本在不在、行尾对不对、容器里能不能跑起来」查清楚，
+      # 并把结果写进 job 摘要 —— 失败时在你的运行总结页上就能看到原因，
+      # 不用翻几十屏构建日志。
+      # 这一步只做诊断，永远不 fail（末尾 exit 0）。
+      - name: 诊断（脚本是否就位 / 行尾 / 容器可用性）
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "### 诊断：${{ matrix.image }} / ${{ matrix.platform }}"
+            echo
+            echo '**工作区里的脚本**（没有 x 位不影响 `bash 脚本`，但若文件缺失就是 127）：'
+            echo '```'
+            ls -l build-linux.sh build-common.sh install-udev.sh 2>&1
+            echo '```'
+            echo '**build-linux.sh 首行字节**（若出现 `\r` 说明是 CRLF 行尾，会直接导致 exit 127）：'
+            echo '```'
+            head -c 40 build-linux.sh | od -c | head -2
+            echo '```'
+            echo '**容器内看到的 /src 与语法检查**：'
+            echo '```'
+            docker run --rm --platform ${{ matrix.platform }} \
+              -v "$PWD:/src" -w /src ${{ matrix.image }} \
+              bash -c 'ls -l /src/build-linux.sh; head -c 40 /src/build-linux.sh | od -c | head -2; bash -n /src/build-linux.sh && echo "语法检查：通过" || echo "语法检查：失败"' 2>&1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "诊断已写入 job 摘要"
+          exit 0
+
+      - name: 在 ${{ matrix.image }} 容器里构建
+        shell: bash
+        run: |
+          # 注意：GitHub 的 run 默认是 bash -e，管道一失败就立刻退出，
+          # 那样 ${PIPESTATUS[0]} 拿不到、摘要也写不进去。所以这里临时关掉 -e。
+          set +e
+
+          # 不走绑定挂载：CI 上 -v "$PWD:/src" 偶发挂载为空，导致容器里
+          # /src/build-linux.sh 不存在 → bash 报 No such file → 退出码 127。
+          # 换成 docker create + docker cp，行为完全确定，也不依赖执行位。
+          echo "== 创建容器 =="
+          cid=$(docker create \
+                  --platform ${{ matrix.platform }} \
+                  -e APP_VER="${{ needs.plan.outputs.version }}" \
+                  -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+                  -w /src \
+                  ${{ matrix.image }} \
+                  bash -c "cd /src && bash ./build-linux.sh --yes ${{ matrix.extra }}")
+          echo "容器 id：$cid"
+          if [ -z "$cid" ]; then
+            echo "::error::docker create 失败"
+            exit 1
+          fi
+
+          echo "== 把源码拷进容器 =="
+          docker cp . "$cid:/src"
+          docker start -a "$cid" 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          echo "构建退出码：$rc"
+
+          # 把产物取回宿主机（verify-release.py 与上传都要用）
+          mkdir -p dist
+          docker cp "$cid:/src/dist/." dist/ 2>/dev/null || true
+          ls -l dist 2>&1 || true
+
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo "### ❌ 构建失败（退出码 $rc）"
+              echo
+              echo '最后 40 行：'
+              echo '```'
+              tail -40 build.log 2>/dev/null
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit "$rc"
+
+      - name: 验收产物（架构是否与文件名一致、组件是否齐全）
+        shell: bash
+        run: |
+          set +e
+          python3 verify-release.py dist/ 2>&1 | tee verify.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo "## 验收失败（退出码 $rc）"
+              echo '```'
+              tail -40 verify.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $rc
+
+      - name: 把状态与日志回传到 ci-log-<label> 分支（无人值守排查用）
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -e
+          mkdir -p /tmp/cilog
+          [ -f "$GITHUB_STEP_SUMMARY" ] && cp "$GITHUB_STEP_SUMMARY" /tmp/cilog/summary.md || true
+          for f in build.log verify.log; do
+            [ -f "$f" ] && cp "$f" /tmp/cilog/ || true
+          done
+          {
+            echo "label=${{ matrix.label }}"
+            echo "status=${{ job.status }}"
+            echo "run=${{ github.run_number }}"
+            echo "ref=${{ github.ref_name }}"
+          } > /tmp/cilog/status.txt
+          cd /tmp
+          rm -rf logs-repo
+          git clone --depth 1 \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" logs-repo
+          cd logs-repo
+          mkdir -p "logs/${{ matrix.label }}"
+          cp /tmp/cilog/* "logs/${{ matrix.label }}/" 2>/dev/null || true
+          # 用 orphan 分支 + 只加 logs/，避免把整个仓库都提交进日志分支
+          git checkout --orphan "ci-log-${{ matrix.label }}" 2>/dev/null || true
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f "logs/${{ matrix.label }}"
+          git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+            commit -m "CI 日志：${{ matrix.label }}（run ${{ github.run_number }}）" || true
+          git push -f origin "HEAD:ci-log-${{ matrix.label }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+          # 省额度：手动跑留 1 天，打 tag 正式发布留 30 天
+          retention-days: ${{ github.ref_type == 'tag' && 30 || 1 }}
+
+  # ---------------------------------------------------------------------------
+  # Windows：单个 exe（内含 scrcpy / adb / 其依赖 DLL）
+  # 只在 full 模式或打 tag 时构建
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows x86_64
+    needs: plan
+    if: ${{ github.ref_type == 'tag' || github.event.inputs.mode == 'full' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 构建单文件 exe
+        shell: pwsh
+        run: |
+          .\build-windows.cmd -SingleFile -Clean 2>&1 | Tee-Object -FilePath build-win.log
+          if ($LASTEXITCODE -ne 0) { throw "build-windows.cmd 失败（退出码 $LASTEXITCODE），日志见总结页" }
+
+      - name: 诊断（失败时把线索写进总结页）
+        if: failure()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $sum = $env:GITHUB_STEP_SUMMARY
+          "## Windows 构建诊断" | Out-File -FilePath $sum -Append -Encoding utf8
+          "### dist 内容" | Out-File -FilePath $sum -Append -Encoding utf8
+          '```' | Out-File -FilePath $sum -Append -Encoding utf8
+          (Get-ChildItem -Path dist -ErrorAction SilentlyContinue |
+             Select-Object Name, Length | Format-Table -AutoSize | Out-String) |
+             Out-File -FilePath $sum -Append -Encoding utf8
+          '```' | Out-File -FilePath $sum -Append -Encoding utf8
+          if (Test-Path build-win.log) {
+            "### build-win.log 末尾 40 行" | Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+            (Get-Content build-win.log -Tail 40 | Out-String) |
+              Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+          } else {
+            "（没有 build-win.log —— 说明失败发生在构建步骤之前）" |
+              Out-File -FilePath $sum -Append -Encoding utf8
+          }
+
+      - name: 规范化产物名
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.plan.outputs.version }}"
+          $exe = Get-ChildItem -Path dist -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "没有生成 exe" }
+          $dst = Join-Path "dist" "scrcpy-gui-zh-$ver-windows-x86_64.exe"
+          Move-Item $exe.FullName $dst -Force
+          Write-Host "产物：$dst"
+
+      - name: 验收产物
+        shell: pwsh
+        run: |
+          python verify-release.py dist 2>&1 | Tee-Object -FilePath verify-win.log
+          if ($LASTEXITCODE -ne 0) {
+            $sum = $env:GITHUB_STEP_SUMMARY
+            "## 验收失败（退出码 $LASTEXITCODE）" | Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+            (Get-Content verify-win.log -Tail 40 | Out-String) | Out-File -FilePath $sum -Append -Encoding utf8
+            '```' | Out-File -FilePath $sum -Append -Encoding utf8
+            throw "验收失败"
+          }
+
+      - name: 把状态与日志回传（无人值守排查用）
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cilog
+          [ -f "$GITHUB_STEP_SUMMARY" ] && cp "$GITHUB_STEP_SUMMARY" /tmp/cilog/summary.md || true
+          [ -f build-win.log ] && cp build-win.log /tmp/cilog/ || true
+          [ -f verify-win.log ] && cp verify-win.log /tmp/cilog/ || true
+          {
+            echo "label=windows-x86_64"
+            echo "status=${{ job.status }}"
+            echo "run=${{ github.run_number }}"
+            echo "ref=${{ github.ref_name }}"
+          } > /tmp/cilog/status.txt
+          cd /tmp
+          rm -rf logs-repo
+          git clone --depth 1 \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" logs-repo
+          cd logs-repo
+          mkdir -p "logs/windows-x86_64"
+          cp /tmp/cilog/* "logs/windows-x86_64/" 2>/dev/null || true
+          git checkout -b ci-log-windows-x86_64 2>/dev/null || git checkout ci-log-windows-x86_64
+          git add -A
+          git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+            commit -m "CI 日志：windows-x86_64（第 ${{ github.run_number }} 次）" || true
+          git push -f origin "HEAD:ci-log-windows-x86_64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/*.exe
+          if-no-files-found: error
+          # 省额度：手动跑留 1 天，打 tag 正式发布留 30 天
+          retention-days: ${{ github.ref_type == 'tag' && 30 || 1 }}
+
+  # ---------------------------------------------------------------------------
+  # 发布：把上面所有产物汇总成 GitHub Release 资产（仅打 tag 时）
+  # ---------------------------------------------------------------------------
+  publish:
+    name: 上传到 Release
+    needs: [plan, linux, windows]
+    if: ${{ always() && github.ref_type == 'tag' && needs.linux.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: 生成校验和
+        run: |
+          cd assets
+          # 只对文件算校验和：产物里有一个目录版解压出来的目录，
+          # 直接 sha256sum * 会报 "Is a directory" 并让这一步失败。
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%P\n' \
+            | sort | xargs -r sha256sum > SHA256SUMS.txt
+          echo "--- assets ---"
+          ls -lh
+          echo "--- SHA256SUMS.txt ---"
+          cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          # 只传文件：目录版解压出来的目录不能作为 Release 资产
+          files: |
+            assets/*.tar.gz
+            assets/*.txt
+            assets/*.exe
+            assets/SHA256SUMS.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          body: |
+            ## 怎么选版本（先看这一节）
+
+            按**目标机器的 glibc 下限**选；glibc 只能向后兼容，所以 glibc 越低
+            的那份能在越多系统上跑。终端里用 `ldd --version | head -1` 查看。
+
+            | 产物（文件名里的 glibc 部分） | 能跑在 |
+            |---|---|
+            | `glibc2.28-*`（仅 x86_64） | RHEL/Rocky/Alma **8 系** / Ubuntu 18.04 / Debian 10 |
+            | `glibc2.31-*` | Debian 11+ / Ubuntu 20.04+ / RHEL 9 / 树莓派 OS |
+            | `glibc2.35-*` | Debian 12+ / Ubuntu 22.04+ / Fedora 36+ / Arch |
+            | `glibc2.36-*` | 同上（ARM 32 位请用这份） |
+            | `glibc2.39-*` | Ubuntu 24.04+ / Debian 13+ |
+
+            架构必须匹配（x86_64 / aarch64 / armv7l），ELF 不能跨架构。
+
+            ## 功能差异：**不是每个产物都有「无线配对码 / 二维码」**
+
+            安卓 11+ 的「无线调试配对」需要内嵌 adb >= 30（platform-tools 30 才实现
+            `adb pair` / `adb mdns`，且走 TLS + 配对密钥协商）。ARM 平台上能运行的新版
+            adb 要求较新的 glibc，**所以 glibc2.31 的 ARM 产物只能用 adb 28，这两个
+            功能在物理上不可用** —— 程序会直接不显示它们，并在界面上写明原因。
+
+            | 产物 | 内嵌 adb | 定位 | USB 直连 | 方式一 USB 转无线 | **配对码** | **二维码** |
+            |---|---|---|---|---|---|---|
+            | `…-glibc2.28-x86_64-full` | 37（Google 官方） | **覆盖最老（RHEL 8 系 / Ubuntu 18.04 / Debian 10）** | 支持 | 支持 | **支持** | **支持** |
+            | `…-glibc2.31-x86_64-full` | 37（Google 官方） | **全功能 + 最兼容（一份兼得）** | 支持 | 支持 | **支持** | **支持** |
+            | `…-glibc2.36-aarch64-full` | 34 | ARM64 全功能 | 支持 | 支持 | **支持** | **支持** |
+            | `…-glibc2.36-armv7l-full` | 34 | ARM32 全功能 | 支持 | 支持 | **支持** | **支持** |
+            | `…-glibc2.31-aarch64-basic` | 28 | ARM64 最兼容 | 支持 | 支持 | **不支持** | **不支持** |
+            | `…-glibc2.31-armv7l-basic` | 28 | ARM32 最兼容 | 支持 | 支持 | **不支持** | **不支持** |
+
+            **为什么分两档**：配对码/二维码需要内嵌 adb ≥ 30，而 ARM 上能取的 adb 受构建环境 glibc 限制。x86_64 能兼得（Google 官方 platform-tools 就是 x86_64，adb 37 在 glibc 2.31 就能跑）；ARM 必须分两份 —— `glibc2.36-*-full` 带 adb 34 有配对，`glibc2.31-*-basic` 只能带 adb 28、没有配对（界面会直接不显示这两个功能），但 glibc 下限更低。
+
+            没有配对码怎么办：先用 USB 插一次走「方式一：USB 转无线」；或在一台有新版
+            adb 的电脑上配对成功后，把 `~/.android/adbkey` 与 `adbkey.pub` 拷到目标机
+            `~/.android/`，之后 `adb connect 手机IP:端口` 即可，不需要 `adb pair`。
+
+            ## 产物形态：解压即用
+
+            每个产物是一个 `<名称>.tar.gz`，解压后是同名目录，里面是可执行文件
+            **加上全部依赖与内嵌软件**（scrcpy / adb / scrcpy-server / install-udev.sh）。
+
+            ```
+            tar -xzf <名称>.tar.gz
+            cd <名称>
+            ./<名称>            # 开图形界面
+            ./<名称> --cli      # 命令行模式（低内存设备推荐）
+            ```
+
+            **不需要安装 adb / scrcpy / Python** —— 都在包里；宿主机只需提供
+            glibc、显卡驱动、X11 或 Wayland。
+
+            > 为什么不做单文件版：单文件包每次启动都要自解压 100+ MB，而开发板 /
+            > 掌机的 `/tmp` 常是 tmpfs（占内存）→ 会把内存塞爆、整机卡死。
+
+            ## 每个产物旁边都有一份 `.txt`
+
+            里面逐项写明：运行要求（架构 / glibc / 图形环境）、能跑与不能跑的系统、
+            内嵌 scrcpy 与 adb 版本、**功能支持表**、以及没有配对功能时的替代方案。
+            **下载前先看它**，就不会下错版本。
+
+            ## 运行要求
+
+            - 图形环境：X11 或 Wayland（界面是 Tkinter，无桌面环境跑不起来）
+            - 虚拟机里如果报 `libGL error` / `GLXCreateContext`，说明宿主机缺显卡驱动：
+              `sudo apt install libgl1-mesa-dri mesa-utils`；
+              没有 3D 加速时程序会自动改用软件渲染重试一次
+            - **不需要**安装 adb、scrcpy、Python —— 都已经打包在里面

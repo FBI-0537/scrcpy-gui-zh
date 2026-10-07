@@ -1,0 +1,10 @@
+# 可选依赖：只有「二维码配对」功能需要，纯 Python 无编译依赖。
+# 不装也能用，程序会提示并退化为「复制二维码内容」。
+#
+#   pip install -r requirements.txt
+#
+# 也可以装发行版包（等效）：
+#   sudo apt install -y python3-segno     # 源里有的话
+#   sudo apt install -y python3-qrcode    # 或这个，程序同样支持
+
+segno
