@@ -342,6 +342,21 @@ build_scrcpy_from_source() {
     export LD_LIBRARY_PATH="$VENDOR_FFMPEG/lib:$VENDOR_FFMPEG/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export LD_LIBRARY_PATH="$VENDOR_LIB_DIRS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+    # 诊断：pkg-config 到底看到哪一版 FFmpeg。
+    # 之前出现过 "need libavformat >= 60.3, found 59.27"（59.27 = 系统自带 5.1），
+    # 但日志看不出是「自编的没编出来」还是「编出来了但 .pc 没被找到」。
+    if command -v pkg-config >/dev/null 2>&1; then
+        info "  · pkg-config 看到的版本："
+        for _lib in libavformat libavcodec libavutil libswresample; do
+            info "      $_lib = $(pkg-config --modversion "$_lib" 2>/dev/null || echo 未找到)"
+        done
+        if [ -d "$VENDOR_FFMPEG" ]; then
+            info "  · 自编 FFmpeg 目录：$(find "$VENDOR_FFMPEG" -name 'libavformat.pc' 2>/dev/null | sed -n '1,3p' | tr '\n' ' ')"
+        else
+            warn "  · 自编 FFmpeg 目录不存在：$VENDOR_FFMPEG（说明 ensure_modern_ffmpeg 没成功）"
+        fi
+    fi
+
     # ---- 选一个「本机依赖能满足」的 scrcpy 版本 ----
     #
     # scrcpy 对 FFmpeg 的要求随版本提高：
