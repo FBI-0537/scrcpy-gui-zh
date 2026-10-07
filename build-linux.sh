@@ -1057,6 +1057,11 @@ PYI_ARGS=(
     --workpath "$BUILD_ROOT/pyiwork"
     --specpath "$BUILD_ROOT/pyispec"
     --hidden-import tkinter
+    # 单文件包启动时要解压自己（100+ MB）。很多开发板 / 掌机的 /tmp 是
+    # tmpfs（占内存），解压就把 RAM 塞爆 → 整机卡死（甚至 OOM 杀掉桌面）。
+    # 指定 /var/tmp（磁盘）；不存在或不可写时 PyInstaller 会自动回退 /tmp。
+    # 用户仍可用环境变量覆盖：TMPDIR=/your/disk/path ./产物
+    --runtime-tmpdir /var/tmp
 )
 # scrcpy / adb 及其依赖库全部塞进 _MEIPASS 根目录
 info "内嵌 scrcpy、adb 与 $LIBN 个依赖库…"
@@ -1187,6 +1192,12 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
     printf '  chmod +x %s\n' "$BASE_OUT"
     printf '  ./%s                 # 开界面\n' "$BASE_OUT"
     printf '  ./%s --selftest      # 只查内嵌组件是否完好\n' "$BASE_OUT"
+    printf '\n【内存与磁盘要求（低配设备重要）】\n'
+    printf '  内存：建议 >= 1.5 GB 可用。单文件包启动会先把自己解压出来\n'
+    printf '        （约 %s）。若 /tmp 是 tmpfs（占内存），低内存设备会被塞爆、\n' "$(du -h "$OUT" 2>/dev/null | cut -f1)"
+    printf '        表现为整机卡死。已默认解压到 /var/tmp（磁盘），\n'
+    printf '        也可自行指定：TMPDIR=/你的/磁盘路径 ./%s\n' "$BASE_OUT"
+    printf '  磁盘：临时目录至少需要 500 MB 空闲\n'
     printf '\n【不含（必须由宿主机提供）】\n'
     printf '  glibc、显卡驱动、X11/Wayland\n'
     printf '%s\n' "=============================================================="
