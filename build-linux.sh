@@ -1131,8 +1131,16 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
         printf '无线配对码（方式二）      ：支持\n'
         printf '无线二维码（方式三）      ：支持（还需要手机与电脑在同一网段、组播可通）\n'
     else
-        printf '无线配对码（方式二）      ：不支持 —— 内嵌 adb 低于 platform-tools 30\n'
-        printf '无线二维码（方式三）      ：不支持 —— 同上\n'
+        printf '无线配对码（方式二）      ：**不支持**\n'
+        printf '无线二维码（方式三）      ：**不支持**\n'
+        printf '  原因：内嵌 adb 是 %s（platform-tools < 30）。\n' "$(adb_version_text "$ADB_BIN")"
+        printf '        安卓 11+ 的无线调试配对走 TLS + 配对密钥协商，adb 30 才实现：\n'
+        printf '          · 配对码 → 需要 adb pair\n'
+        printf '          · 二维码 → 需要 adb mdns 发现地址 + adb pair 配对\n'
+        printf '          · 连无线调试端口 → 需要 TLS\n'
+        printf '        这是版本硬限制，**不需要用户安装任何软件**。\n'
+        printf '  本版本仍然可用：USB 直连、方式一（USB 转无线）、拷 adbkey 后直连。\n'
+        printf '  想要配对码/二维码：请换内嵌 adb >= 30 的产物（glibc2.35/2.36/2.39 都有）。\n'
     fi
     printf '录屏 / 音频转发           ：支持（scrcpy %s 的能力）\n' "${SCRCPY_VER:-?}"
     if ver_ge "${SCRCPY_VER:-0}" "3.3"; then

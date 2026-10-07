@@ -490,6 +490,26 @@ def adb_wireless_ok():
     return adb_mdns_supported()      # 版本号解析不出来就实测一次
 
 
+def _wireless_pairing_supported():
+    """内嵌 adb 是否支持安卓 11+ 的无线配对（配对码 / 二维码）。
+
+    需要 platform-tools >= 30（2020 年随安卓 11 无线调试一起提供）。
+    旧版 adb 连协议都不认识（配对走 TLS + SPAKE2），不是缺个命令那么简单，
+    所以界面上直接不显示这两个功能，并写明原因与替代方案。
+    结果缓存，避免每次构建界面都调一次 adb。
+    """
+    global _PAIRING_OK
+    if _PAIRING_OK is None:
+        try:
+            _PAIRING_OK = bool(adb_wireless_ok())
+        except Exception:  # noqa: BLE001
+            _PAIRING_OK = False
+    return _PAIRING_OK
+
+
+_PAIRING_OK = None
+
+
 def adb_too_old_hint(feature="无线调试"):
     """adb 过旧时的解决指引（纯文本）。"""
     return (
@@ -1387,61 +1407,88 @@ class ScrcpyGui:
         ttk.Button(row1, text="连接", command=self.wifi_connect).pack(side="left")
         ttk.Button(row1, text="自动发现设备", command=self.wifi_discover).pack(side="left", padx=8)
 
-        box2 = ttk.LabelFrame(parent, text=" 方式二：安卓 11+ 无线调试配对（不必插线） ", padding=10)
-        box2.pack(fill="x", pady=12)
-        ttk.Label(box2, text="手机：开发者选项 → 无线调试 → 使用配对码配对设备，\n"
-                             "会显示「配对用的 IP:端口」和 6 位配对码（配对端口与连接端口不同）。\n"
-                             "配对成功后，把上方「端口」改成无线调试主页显示的连接端口，再点「连接」。",
-                  justify="left").pack(anchor="w")
-        row2 = ttk.Frame(box2)
-        row2.pack(fill="x", pady=(8, 0))
-        ttk.Label(row2, text="配对地址 IP：").pack(side="left")
-        self.var_pip = tk.StringVar()
-        ttk.Entry(row2, textvariable=self.var_pip, width=16).pack(side="left")
-        ttk.Label(row2, text=" 配对端口：").pack(side="left")
-        self.var_pport = tk.StringVar()
-        ttk.Entry(row2, textvariable=self.var_pport, width=8).pack(side="left")
-        ttk.Label(row2, text=" 配对码：").pack(side="left")
-        self.var_pcode = tk.StringVar()
-        ttk.Entry(row2, textvariable=self.var_pcode, width=10).pack(side="left")
-        ttk.Button(row2, text="配对", command=self.wifi_pair).pack(side="left", padx=8)
-        ttk.Button(row2, text="自动发现配对端口", command=self.wifi_find_pair_port).pack(side="left")
+        if _wireless_pairing_supported():
+            box2 = ttk.LabelFrame(parent, text=" 方式二：安卓 11+ 无线调试配对（不必插线） ", padding=10)
+            box2.pack(fill="x", pady=12)
+            ttk.Label(box2, text="手机：开发者选项 → 无线调试 → 使用配对码配对设备，\n"
+                                 "会显示「配对用的 IP:端口」和 6 位配对码（配对端口与连接端口不同）。\n"
+                                 "配对成功后，把上方「端口」改成无线调试主页显示的连接端口，再点「连接」。",
+                      justify="left").pack(anchor="w")
+            row2 = ttk.Frame(box2)
+            row2.pack(fill="x", pady=(8, 0))
+            ttk.Label(row2, text="配对地址 IP：").pack(side="left")
+            self.var_pip = tk.StringVar()
+            ttk.Entry(row2, textvariable=self.var_pip, width=16).pack(side="left")
+            ttk.Label(row2, text=" 配对端口：").pack(side="left")
+            self.var_pport = tk.StringVar()
+            ttk.Entry(row2, textvariable=self.var_pport, width=8).pack(side="left")
+            ttk.Label(row2, text=" 配对码：").pack(side="left")
+            self.var_pcode = tk.StringVar()
+            ttk.Entry(row2, textvariable=self.var_pcode, width=10).pack(side="left")
+            ttk.Button(row2, text="配对", command=self.wifi_pair).pack(side="left", padx=8)
+            ttk.Button(row2, text="自动发现配对端口", command=self.wifi_find_pair_port).pack(side="left")
 
-        # ---- 方式三：二维码配对 ----
-        box3 = ttk.LabelFrame(parent, text=" 方式三：二维码配对（推荐，手机扫码即可） ", padding=10)
-        box3.pack(fill="x")
+            # ---- 方式三：二维码配对 ----
+            box3 = ttk.LabelFrame(parent, text=" 方式三：二维码配对（推荐，手机扫码即可） ", padding=10)
+            box3.pack(fill="x")
 
-        left = ttk.Frame(box3)
-        left.pack(side="left", fill="y")
-        self.qr_canvas = tk.Canvas(left, width=300, height=300, background="white",
-                                   highlightthickness=1, highlightbackground="#cccccc")
-        self.qr_canvas.pack()
-        self.lbl_qr = ttk.Label(left, text="点右侧按钮生成二维码",
-                                style="Hint.TLabel", wraplength=300, justify="center")
-        self.lbl_qr.pack(pady=(4, 0))
+            left = ttk.Frame(box3)
+            left.pack(side="left", fill="y")
+            self.qr_canvas = tk.Canvas(left, width=300, height=300, background="white",
+                                       highlightthickness=1, highlightbackground="#cccccc")
+            self.qr_canvas.pack()
+            self.lbl_qr = ttk.Label(left, text="点右侧按钮生成二维码",
+                                    style="Hint.TLabel", wraplength=300, justify="center")
+            self.lbl_qr.pack(pady=(4, 0))
 
-        right = ttk.Frame(box3)
-        right.pack(side="left", fill="both", expand=True, padx=(14, 0))
-        ttk.Label(right, justify="left", text=(
-            "操作步骤：\n"
-            "  1) 点下方「生成二维码并配对」\n"
-            "  2) 手机：开发者选项 → 无线调试 →\n"
-            "     「使用二维码配对设备」\n"
-            "  3) 用手机镜头扫描左侧二维码\n"
-            "  4) 本程序会自动发现并完成配对，\n"
-            "     然后自动连接、可直接投屏\n\n"
-            "优点：不用手抄 IP、端口、配对码，\n"
-            "也不需要插数据线。")).pack(anchor="w")
-        ttk.Button(right, text="生成二维码并配对", style="Run.TButton",
-                   command=self.wifi_qr_pair).pack(anchor="w", pady=(10, 4))
-        self.btn_qr_copy = ttk.Button(right, text="复制二维码内容",
-                                      command=self.qr_copy_payload, state="disabled")
-        self.btn_qr_copy.pack(anchor="w")
-        ttk.Button(right, text="mDNS 诊断", command=self.wifi_mdns_diag).pack(anchor="w", pady=(4, 0))
-        ttk.Button(right, text="网络探测（测组播）",
-                   command=self.wifi_net_probe).pack(anchor="w", pady=(4, 0))
-        ttk.Label(right, text="（卡在「正在配对设备」时先点「网络探测」）",
-                  style="Hint.TLabel").pack(anchor="w", pady=(4, 0))
+            right = ttk.Frame(box3)
+            right.pack(side="left", fill="both", expand=True, padx=(14, 0))
+            ttk.Label(right, justify="left", text=(
+                "操作步骤：\n"
+                "  1) 点下方「生成二维码并配对」\n"
+                "  2) 手机：开发者选项 → 无线调试 →\n"
+                "     「使用二维码配对设备」\n"
+                "  3) 用手机镜头扫描左侧二维码\n"
+                "  4) 本程序会自动发现并完成配对，\n"
+                "     然后自动连接、可直接投屏\n\n"
+                "优点：不用手抄 IP、端口、配对码，\n"
+                "也不需要插数据线。")).pack(anchor="w")
+            ttk.Button(right, text="生成二维码并配对", style="Run.TButton",
+                       command=self.wifi_qr_pair).pack(anchor="w", pady=(10, 4))
+            self.btn_qr_copy = ttk.Button(right, text="复制二维码内容",
+                                          command=self.qr_copy_payload, state="disabled")
+            self.btn_qr_copy.pack(anchor="w")
+            ttk.Button(right, text="mDNS 诊断", command=self.wifi_mdns_diag).pack(anchor="w", pady=(4, 0))
+            ttk.Button(right, text="网络探测（测组播）",
+                       command=self.wifi_net_probe).pack(anchor="w", pady=(4, 0))
+            ttk.Label(right, text="（卡在「正在配对设备」时先点「网络探测」）",
+                      style="Hint.TLabel").pack(anchor="w", pady=(4, 0))
+        else:
+            # 内嵌 adb < 30：这两个功能物理上用不了。不摆点不动的按钮，
+            # 直接说明原因 + 仍然可用的做法 + 该换哪个产物。
+            box_no = ttk.LabelFrame(
+                parent, text=" 方式二 / 方式三：本版本不含此功能（原因见下） ", padding=10)
+            box_no.pack(fill="x", pady=12)
+            ttk.Label(box_no, justify="left", wraplength=780, text=(
+                "本产物内嵌的 adb 是 " + (adb_version_text() or "未知版本") +
+                "（platform-tools < 30），\n"
+                "而安卓 11+ 的「无线调试配对」必须满足：\n\n"
+                "  · 配对码配对     → 需要 adb pair 命令（30 才加入）\n"
+                "  · 二维码配对     → 需要 adb mdns 找到地址 + adb pair 配对（同样 30）\n"
+                "  · 连无线调试端口 → 需要 TLS（也是 30 才支持）\n\n"
+                "这是 adb 的版本硬限制，不是缺文件、也不需要你安装任何软件。\n\n"
+                "本版本仍然可以用的：\n"
+                "  [可以] USB 直连投屏\n"
+                "  [可以] 方式一：USB 转无线（adb tcpip / adb connect 老版本就有）\n"
+                "  [可以] 在别处配对好后，把 ~/.android/adbkey 拷过来直接 adb connect\n\n"
+                "想用配对码 / 二维码：请换内嵌 adb >= 30 的产物 ——\n"
+                "本项目的 glibc2.35 / glibc2.36 / glibc2.39 版本都具备；\n"
+                "文件名带 glibc2.31 的版本没有（ARM + glibc 2.31 上拿不到新版 adb）。"
+            )).pack(anchor="w")
+            ttk.Label(box_no, justify="left", wraplength=780, style="Hint.TLabel", text=(
+                "怎么看某个产物有没有这个功能：看它旁边那份 .txt 说明文件，\n"
+                "「功能支持」一节会写明「无线配对码（方式二）」是支持还是不支持。"
+            )).pack(anchor="w", pady=(8, 0))
 
         box4 = ttk.LabelFrame(parent, text=" 其它 ", padding=10)
         box4.pack(fill="x", pady=(12, 0))

@@ -269,3 +269,49 @@ jobs:
           files: assets/*
           generate_release_notes: true
           fail_on_unmatched_files: false
+          body: |
+            ## 怎么选版本（先看这一节）
+
+            按**目标机器的 glibc 下限**选；glibc 只能向后兼容，所以 glibc 越低
+            的那份能在越多系统上跑。终端里用 `ldd --version | head -1` 查看。
+
+            | 产物（文件名里的 glibc 部分） | 能跑在 |
+            |---|---|
+            | `glibc2.31-*` | Debian 11+ / Ubuntu 20.04+ / RHEL 9 / 树莓派 OS |
+            | `glibc2.35-*` | Debian 12+ / Ubuntu 22.04+ / Fedora 36+ / Arch |
+            | `glibc2.36-*` | 同上（ARM 32 位请用这份） |
+            | `glibc2.39-*` | Ubuntu 24.04+ / Debian 13+ |
+
+            架构必须匹配（x86_64 / aarch64 / armv7l），ELF 不能跨架构。
+
+            ## 功能差异：**不是每个产物都有「无线配对码 / 二维码」**
+
+            安卓 11+ 的「无线调试配对」需要内嵌 adb >= 30（platform-tools 30 才实现
+            `adb pair` / `adb mdns`，且走 TLS + 配对密钥协商）。ARM 平台上能运行的新版
+            adb 要求较新的 glibc，**所以 glibc2.31 的 ARM 产物只能用 adb 28，这两个
+            功能在物理上不可用** —— 程序会直接不显示它们，并在界面上写明原因。
+
+            | 产物 | 内嵌 adb | USB 直连 | 方式一 USB 转无线 | 配对码 | 二维码 |
+            |---|---|---|---|---|---|
+            | `glibc2.31-x86_64` | 37 | 支持 | 支持 | 支持 | 支持 |
+            | `glibc2.35-x86_64` / `glibc2.35-aarch64` | 34 | 支持 | 支持 | 支持 | 支持 |
+            | `glibc2.36-armv7l` | 34 | 支持 | 支持 | 支持 | 支持 |
+            | `glibc2.31-aarch64` / `glibc2.31-armv7l` | 28 | 支持 | 支持 | **不支持** | **不支持** |
+
+            没有配对码怎么办：先用 USB 插一次走「方式一：USB 转无线」；或在一台有新版
+            adb 的电脑上配对成功后，把 `~/.android/adbkey` 与 `adbkey.pub` 拷到目标机
+            `~/.android/`，之后 `adb connect 手机IP:端口` 即可，不需要 `adb pair`。
+
+            ## 每个产物旁边都有一份 `.txt`
+
+            里面逐项写明：运行要求（架构 / glibc / 图形环境）、能跑与不能跑的系统、
+            内嵌 scrcpy 与 adb 版本、**功能支持表**、以及没有配对功能时的替代方案。
+            **下载前先看它**，就不会下错版本。
+
+            ## 运行要求
+
+            - 图形环境：X11 或 Wayland（界面是 Tkinter，无桌面环境跑不起来）
+            - 虚拟机里如果报 `libGL error` / `GLXCreateContext`，说明宿主机缺显卡驱动：
+              `sudo apt install libgl1-mesa-dri mesa-utils`；
+              没有 3D 加速时程序会自动改用软件渲染重试一次
+            - **不需要**安装 adb、scrcpy、Python —— 都已经打包在里面
