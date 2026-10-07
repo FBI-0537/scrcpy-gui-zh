@@ -607,6 +607,16 @@ collect_missing() {
     need_cmd curl     curl      "下载依赖"
     need_cmd file     file      "校验产物"
     need_cmd stat     coreutils "读取文件大小"
+    # 下面这些**不属于** coreutils，最小化镜像里可能没有。
+    # 实测 Rocky 最小容器没有 find（在独立的 findutils 包里）→ 第 3 步
+    # 统计依赖库时报 command not found、退出码 127。
+    need_cmd find     findutils "统计依赖库数量（find）"
+    need_cmd xargs    findutils "批量处理文件列表"
+    need_cmd tar      tar       "生成 tar.gz 发布包"
+    need_cmd gzip     gzip      "tar.gz 压缩"
+    need_cmd awk      gawk      "文本处理"
+    need_cmd sed      sed       "文本处理"
+    need_cmd grep     grep      "文本匹配"
 }
 
 collect_missing

@@ -185,6 +185,22 @@ pkg_name_for_key() {
                 suse)   printf 'ffmpeg-devel\n' ;;
                 alpine) printf 'ffmpeg-dev\n' ;;
             esac ;;
+        gzip)
+            case "$DISTRO_FAMILY" in
+                *) printf 'gzip\n' ;;
+            esac ;;
+        gawk)
+            case "$DISTRO_FAMILY" in
+                *) printf 'gawk\n' ;;
+            esac ;;
+        sed)
+            case "$DISTRO_FAMILY" in
+                *) printf 'sed\n' ;;
+            esac ;;
+        grep)
+            case "$DISTRO_FAMILY" in
+                *) printf 'grep\n' ;;
+            esac ;;
         libdrm-dev)
             # scrcpy 3.x 的显示代码要 libdrm（实测缺它会 meson 配置失败）
             case "$DISTRO_FAMILY" in
