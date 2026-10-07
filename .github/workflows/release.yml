@@ -321,7 +321,8 @@ jobs:
           mkdir -p "logs/windows-x86_64"
           cp /tmp/cilog/* "logs/windows-x86_64/" 2>/dev/null || true
           git checkout --orphan ci-log-windows-x86_64-${{ github.run_number }} 2>/dev/null || true
-          git add -A
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f "logs/windows-x86_64"
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "CI 日志：windows-x86_64（第 ${{ github.run_number }} 次）" || true
           git push -f origin "HEAD:ci-log-windows-x86_64-${{ github.run_number }}"

@@ -21,6 +21,16 @@ import re
 import struct
 import sys
 
+# Windows 运行器的控制台默认是 cp1252，直接 print 中文会 UnicodeEncodeError
+# （实测 CI 里验收脚本就是这样崩的）。强制切成 UTF-8 输出。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
+
 COOKIE_MAGIC = b'MEI\014\013\012\013\016'
 
 ELF_MACHINES = {
