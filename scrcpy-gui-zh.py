@@ -384,22 +384,38 @@ def is_network_serial(serial):
     return False
 
 
+def transport_from_device_line(serial, line):
+    """从 `adb devices -l` 的一行判断该设备是 USB 还是网络（纯函数，便于测试）。
+
+    判断顺序：
+      1) 该行有 `usb:` 字段（形如 usb:1-3）→ USB。Linux/macOS 的 USB 设备会带。
+      2) 否则按**序列号形态**判断：带冒号（IP:端口）或 adb-*.…._adb-tls-connect._tcp
+         → 网络；其它（硬件序列号）→ USB。
+
+    ⚠️ 这里的第 2 步是关键：**不能**"没有 usb: 字段就当成网络" ——
+    Windows 上 USB 设备的 `adb devices -l` 通常**没有** usb: 字段，
+    那样会把 USB 设备显示成「无线」（用户实测反馈过这个 bug）。
+    """
+    parts = (line or "").split()
+    if len(parts) >= 2 and parts[0] == serial:
+        for token in parts[2:]:
+            if token.startswith("usb:"):
+                return "usb"
+    return "tcp" if is_network_serial(serial) else "usb"
+
+
 def adb_device_transport(serial):
     """判断某设备是 USB 还是网络连接。
 
-    优先看 `adb devices -l` 里的 `usb:` 字段 —— **只有 USB 连接的设备才有
-    `usb:1-3` 这样的字段**，网络设备没有，这比看 serial 里有没有冒号可靠。
-    取不到就退回按 serial 形式推断。
+    优先用 `adb devices -l` 里那一行的信息；adb 输出里找不到该设备时，
+    退回按 serial 形式推断。两种情况都用同一个纯函数，规则一致。
     """
     if ADB and serial:
         _rc, out = run([ADB, "devices", "-l"])
         for line in out.splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[0] == serial:
-                for token in parts[2:]:
-                    if token.startswith("usb:"):
-                        return "usb"
-                return "tcp"
+                return transport_from_device_line(serial, line)
     return "tcp" if is_network_serial(serial) else "usb"
 
 
