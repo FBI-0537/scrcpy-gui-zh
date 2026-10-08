@@ -1,0 +1,41 @@
+========================================================================
+文件：scrcpy-gui-zh-1.0.0-windows-x86_64.exe
+大小：13.5 MB（14150982 字节）
+  格式：PE   架构：x86_64（64 位）
+  [OK]   架构与文件名一致（x86_64）
+  [OK]   是 PyInstaller 单文件包（找到 MEI cookie）
+  [失败] 包里找不到 scrcpy.exe
+  [失败] 包里找不到 adb.exe 及其 USB 驱动 DLL
+  [失败] 包里找不到 scrcpy-server
+  [OK]   包内含 Tcl/Tk（图形界面）
+  [OK]   包内含 segno（二维码）
+  [注意] 依赖库特征只命中 1/8 项，可能没收集全
+  包内库/可执行文件清单（57 个，最多列 24 个）：
+        ADVAPI32.dll
+        COMCTL32.dll
+        GDI32.dll
+        KERNEL32.dll
+        USER32.dll
+        VCRUNTIME140.dll
+        VCRUNTIME140_1.dll
+        bapi-ms-win-core-console-l1-1-0.dll
+        bapi-ms-win-core-datetime-l1-1-0.dll
+        bapi-ms-win-core-debug-l1-1-0.dll
+        bapi-ms-win-core-errorhandling-l1-1-0.dll
+        bapi-ms-win-core-fibers-l1-1-0.dll
+        bapi-ms-win-core-fibers-l1-1-1.dll
+        bapi-ms-win-core-file-l1-1-0.dll
+        bapi-ms-win-core-file-l1-2-0.dll
+        bapi-ms-win-core-file-l2-1-0.dll
+        bapi-ms-win-core-handle-l1-1-0.dll
+        bapi-ms-win-core-heap-l1-1-0.dll
+        bapi-ms-win-core-interlocked-l1-1-0.dll
+        bapi-ms-win-core-kernel32-legacy-l1-1-1.dll
+        bapi-ms-win-core-libraryloader-l1-1-0.dll
+        bapi-ms-win-core-localization-l1-2-0.dll
+        bapi-ms-win-core-memory-l1-1-0.dll
+        bapi-ms-win-core-namedpipe-l1-1-0.dll
+        …（还有 33 个）
+  ==> 不通过
+========================================================================
+汇总：1 个产物，0 个通过，1 个不通过（另有 0 个附带文件已跳过）
