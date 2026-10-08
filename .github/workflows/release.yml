@@ -518,3 +518,34 @@ jobs:
             --json assets --jq '.assets[] | "\(.name)\t\(.size)"' 2>&1 | tee /tmp/release-assets.txt
           echo
           echo "资产总数：$(grep -c . /tmp/release-assets.txt 2>/dev/null || echo 0)"
+
+      - name: 把 publish 日志回传（失败时我能自己查）
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/plog
+          {
+            echo "job_status=${{ job.status }}"
+            echo "run=${{ github.run_number }}"
+            echo "tag=${{ github.ref_name }}"
+            echo "--- assets 目录 ---"
+            ls -lh "$GITHUB_WORKSPACE/assets" 2>/dev/null || echo "(无 assets 目录)"
+            echo "--- 尝试列出 Release 实际资产 ---"
+            GH_TOKEN="${{ github.token }}" gh release view "${{ github.ref_name }}" \
+              --json assets --jq '.assets[] | "\(.name)\t\(.size)"' 2>&1 || echo "(列出失败)"
+          } > /tmp/plog/info.txt 2>&1
+          cd /tmp
+          rm -rf plog-repo
+          git clone --depth 1 \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" plog-repo
+          cd plog-repo
+          mkdir -p publish-log
+          cp /tmp/plog/info.txt "publish-log/${{ github.run_number }}.txt"
+          git checkout --orphan "publish-log-${{ github.run_number }}" 2>/dev/null || true
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f publish-log
+          git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+            commit -m "publish 日志 run ${{ github.run_number }}" || true
+          git push -f origin "HEAD:publish-log-${{ github.run_number }}"

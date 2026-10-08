@@ -65,7 +65,8 @@ jobs:
             echo
             echo "=== 核对 ==="
             echo "剩余 Release："
-            gh api "repos/${{ github.repository }}/releases" --jq '.[].tag_name' 2>&1 || true
+            gh api "repos/${{ github.repository }}/releases" \
+              --jq '.[] | "\(.tag_name)（\(.assets | length) 个资产）"' 2>&1 || true
             echo "剩余标签："
             gh api "repos/${{ github.repository }}/git/refs/tags" --jq '.[].ref' 2>&1 || true
             echo
@@ -139,7 +140,7 @@ jobs:
 
           echo "=== 剩余 Release 列表 ==="
           gh api "repos/${{ github.repository }}/releases" \
-            --jq '.[] | "\(.tag_name)\t\(.assets | length) 个资产"' 2>&1 \
+            --jq '.[] | "\(.tag_name)（\(.assets | length) 个资产）", (.assets[] | "    \(.name)\t\(.size)")' 2>&1 \
             || echo "（列 Release 失败）"
           echo
           echo "=== 剩余标签列表 ==="
@@ -166,7 +167,7 @@ jobs:
             tail -40 /tmp/cl/delete.log 2>/dev/null || echo "(没有日志)"
             echo "--- 剩余 Release ---"
             gh api "repos/${{ github.repository }}/releases" \
-              --jq '.[] | "\(.tag_name)\t\(.assets | length) 个资产"' 2>&1 \
+              --jq '.[] | "\(.tag_name)（\(.assets | length) 个资产）", (.assets[] | "    \(.name)\t\(.size)")' 2>&1 \
               || echo "(查询失败)"
             echo "--- 剩余标签 ---"
             git ls-remote --tags "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" 2>/dev/null \
