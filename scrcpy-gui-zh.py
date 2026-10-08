@@ -35,6 +35,10 @@ import subprocess
 import sys
 import threading
 import time
+# 说明：这里**不能**按 --cli 条件导入 Tk ——
+# 模块级有 `class ScrollableFrame(ttk.Frame)`，类定义在导入时就需要真实的基类，
+# 把 ttk 置成 None 会让模块加载直接崩（实测过）。
+# 命令行模式省下的是"不创建窗口与控件"，Tk 库本身仍会加载（约 5-10MB）。
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, messagebox, filedialog
@@ -1364,6 +1368,8 @@ class ScrcpyGui:
         self.var_top = tk.BooleanVar(value=False)
         self.var_noaudio = tk.BooleanVar(value=False)
         self.var_record = tk.BooleanVar(value=False)
+        # 低配模式：弱机（开发板 / 掌机 / 无 3D 加速）一键降负担
+        self.var_lowspec = tk.BooleanVar(value=False)
 
         ttk.Checkbutton(checks, text="投屏时手机息屏", variable=self.var_off).grid(row=0, column=0, sticky="w", padx=(0, 18))
         ttk.Checkbutton(checks, text="保持手机唤醒", variable=self.var_awake).grid(row=0, column=1, sticky="w", padx=(0, 18))
@@ -1372,6 +1378,12 @@ class ScrcpyGui:
 
         checks2 = ttk.Frame(opt)
         checks2.pack(fill="x", pady=(6, 0))
+
+        # 低配模式：勾上就自动切 1024/4M，并加软件渲染与帧率限制
+        ttk.Checkbutton(checks2, text="低配模式（弱机推荐）",
+                        variable=self.var_lowspec,
+                        command=self._on_lowspec_toggle).grid(row=0, column=0, sticky="w",
+                                                              padx=(0, 18))
         ttk.Checkbutton(checks2, text="不转发音频", variable=self.var_noaudio).grid(row=0, column=0, sticky="w", padx=(0, 18))
         ttk.Checkbutton(checks2, text="录屏到文件", variable=self.var_record).grid(row=0, column=1, sticky="w", padx=(0, 8))
         self.var_recpath = tk.StringVar(value=os.path.expanduser("~/scrcpy-record.mp4"))
@@ -1976,6 +1988,18 @@ class ScrcpyGui:
 
     # ---------- 构建并启动命令 ----------
 
+    def _on_lowspec_toggle(self):
+        """勾上低配模式时，顺手把分辨率/码率调低（用户仍可手动改回去）。"""
+        try:
+            if self.var_lowspec.get():
+                if self.var_size.get() not in ("640", "800", "1024"):
+                    self.var_size.set("1024")
+                if self.var_bitrate.get() not in ("2M", "4M"):
+                    self.var_bitrate.set("4M")
+                self.log("已启用低配模式：1024 分辨率 / 4M 码率 / 30 帧 / 软件渲染")
+        except Exception:
+            pass
+
     def build_command(self):
         if not SCRCPY:
             return None
@@ -2011,6 +2035,19 @@ class ScrcpyGui:
         if self.var_record.get():
             cmd += ["--record", self.var_recpath.get().strip() or
                     os.path.expanduser("~/scrcpy-record.mp4")]
+
+        # 低配模式：弱机上最有效的三个开关
+        # （只在用户没自己指定时补，避免覆盖高级用法）
+        try:
+            if self.var_lowspec.get():
+                if "--max-size" not in cmd:
+                    cmd += ["--max-size", "1024"]
+                if ver and ver >= (2, 0) and "--max-fps" not in cmd:
+                    cmd += ["--max-fps", "30"]
+                if not any(str(a).startswith("--render-driver") for a in cmd):
+                    cmd += ["--render-driver=software"]
+        except Exception:
+            pass
 
         extra = self.var_extra.get().strip()
         if extra:
@@ -2840,6 +2877,9 @@ def selftest():
     return 0 if ok else 1
 
 
+# 低配模式用的一组 scrcpy 参数（界面复选框与命令行 --low-spec 共用）
+LOW_SPEC_ARGS = ["--max-size", "1024", "--max-fps", "30", "--render-driver=software"]
+
 CLI_HELP = """scrcpy 手机投屏 · 命令行模式（不启动图形界面，适合低内存设备）
 
 用法：
@@ -2850,16 +2890,17 @@ CLI_HELP = """scrcpy 手机投屏 · 命令行模式（不启动图形界面，�
   产物 --version                 版本信息
 
 说明：
-  · 命令行模式不加载 Tk 界面，比图形模式省约 40-60 MB 内存，也更省 CPU
+  · 命令行模式不创建图形界面（省约 40-60 MB 内存与相应 CPU），更适合低内存设备
   · 不认识的参数会**原样传给 scrcpy**，scrcpy 的选项都能直接用
   · 按 Ctrl+C 结束投屏
-"""
+  --low-spec                低配模式：1024 分辨率 / 30 帧 / 软件渲染\n"""
 
 
 def cli_main(argv):
     """命令行模式。返回进程退出码。"""
     serial = ""
     passthrough = []
+    low_spec = False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -2872,6 +2913,10 @@ def cli_main(argv):
                 return 2
             serial = argv[i + 1]
             i += 2
+            continue
+        if a == "--low-spec":
+            low_spec = True
+            i += 1
             continue
         passthrough.append(a)
         i += 1
@@ -2898,7 +2943,10 @@ def cli_main(argv):
         print("错误：找不到 scrcpy（本产物的内嵌 scrcpy 可能损坏）", file=sys.stderr)
         return 2
 
-    cmd = [SCRCPY, "-s", serial] + passthrough
+    cmd = [SCRCPY, "-s", serial]
+    if low_spec:
+        cmd += LOW_SPEC_ARGS
+    cmd += passthrough
     print("$ " + " ".join(cmd))
     sys.stdout.flush()
     # 命令行模式要独占终端、把 scrcpy 的输出实时透出来（Ctrl+C 能结束）

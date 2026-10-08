@@ -7,11 +7,11 @@
 
 ## 产物形态：解压即用（每个版本都是）
 
-每个产物是一个 **`<名称>.tar.gz`**：解压后得到同名目录，里面是可执行文件
+每个产物是一个 **`<名称>.tar.xz`**：解压后得到同名目录，里面是可执行文件
 **加上全部依赖与内嵌软件**（scrcpy / adb / scrcpy-server / install-udev.sh）。
 
 ```bash
-tar -xzf scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.gz
+tar -xJf scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz
 cd scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full
 ./scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full          # 开图形界面
 ./scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full --cli     # 命令行模式

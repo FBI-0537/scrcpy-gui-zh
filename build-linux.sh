@@ -294,12 +294,12 @@ build_scrcpy_from_source() {
         sdlver="${sdlver#release-}"
         [ -n "$sdlver" ] || die "无法确定 SDL3 版本，请检查网络 / 系统代理"
         info "SDL3 版本：$sdlver"
-        sdlurl="https://github.com/libsdl-org/SDL/releases/download/release-$sdlver/SDL3-$sdlver.tar.gz"
-        curl -fL --retry 2 --max-time 900 -o "$VENDOR_DIR/sdl3.tar.gz" "$sdlurl" \
+        sdlurl="https://github.com/libsdl-org/SDL/releases/download/release-$sdlver/SDL3-$sdlver.tar.xz"
+        curl -fL --retry 2 --max-time 900 -o "$VENDOR_DIR/sdl3.tar.xz" "$sdlurl" \
             || die "SDL3 下载失败：$sdlurl"
         rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build"
         mkdir -p "$VENDOR_DIR/sdl3-src"
-        tar -xzf "$VENDOR_DIR/sdl3.tar.gz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
+        tar -xJf "$VENDOR_DIR/sdl3.tar.xz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
             || die "SDL3 解压失败"
         # 第一次按完整依赖配置；失败时打印错误摘要，再用最小依赖重试一次
         # （关掉 XTEST / ALSA 这些可选后端），避免因为一个可选依赖整轮白跑。
@@ -342,7 +342,7 @@ build_scrcpy_from_source() {
             warn "（scrcpy ≤ 3.0.1 基于 SDL2，版本循环会自动退到能编出来的那一版）"
             rm -rf "$VENDOR_SDL3" "$VENDOR_DIR/sdl3-build"
         fi
-        rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.gz"
+        rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.xz"
         info "SDL3 已装到 $VENDOR_SDL3"
     fi
 
@@ -397,21 +397,21 @@ build_scrcpy_from_source() {
     GOT_SERVER=""
     for ver in $CANDS; do
         info "试 scrcpy v$ver …"
-        tarball="$VENDOR_DIR/scrcpy-$ver.tar.gz"
+        tarball="$VENDOR_DIR/scrcpy-$ver.tar.xz"
         src="$VENDOR_DIR/scrcpy-src"
         cand_server="$VENDOR_DIR/scrcpy-server-$ver"
         rm -rf "$src" "$tarball" "$cand_server" "$VENDOR_DIR/meson-setup.log"
 
         # 源码只能从 archive/refs/tags 拿 —— GitHub release 的资产里
-        # 没有源码包（只有 scrcpy-server-vX.Y、scrcpy-linux-x86_64-vX.Y.tar.gz 等）
+        # 没有源码包（只有 scrcpy-server-vX.Y、scrcpy-linux-x86_64-vX.Y.tar.xz 等）
         if ! curl -fL --retry 2 --max-time 600 -o "$tarball" \
-                "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.gz" \
+                "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.xz" \
                 2>"$VENDOR_DIR/curl-err.log"; then
             warn "  · v$ver 源码下载失败：$(tail -1 "$VENDOR_DIR/curl-err.log" 2>/dev/null)"
             continue
         fi
         mkdir -p "$src"
-        if ! tar -xzf "$tarball" -C "$src" --strip-components=1 2>/dev/null; then
+        if ! tar -xJf "$tarball" -C "$src" --strip-components=1 2>/dev/null; then
             warn "  · v$ver 解压失败，试下一个"
             rm -rf "$src" "$tarball"
             continue
@@ -622,6 +622,7 @@ collect_missing() {
     need_cmd xargs    findutils "批量处理文件列表"
     need_cmd tar      tar       "生成 tar.gz 发布包"
     need_cmd gzip     gzip      "tar.gz 压缩"
+    need_cmd xz       xz-utils  "tar.xz 压缩（产物用这个，省 30-40%）"
     need_cmd awk      gawk      "文本处理"
     need_cmd sed      sed       "文本处理"
     need_cmd grep     grep      "文本匹配"
@@ -1129,7 +1130,7 @@ info "功能档位：$FEATURE_TAG（内嵌 adb $(adb_version_text "$ADB_BIN")）
 # 默认：目录版（解压即用，启动不自解压）。--onefile 才做旧式单文件。
 if [ "$ONEDIR" -eq 1 ]; then
     OUT="$DIST_DIR/$ARTIFACT_NAME/$ARTIFACT_NAME"
-    rm -rf "$DIST_DIR/$ARTIFACT_NAME" "$DIST_DIR/$ARTIFACT_NAME.tar.gz"
+    rm -rf "$DIST_DIR/$ARTIFACT_NAME" "$DIST_DIR/$ARTIFACT_NAME.tar.xz"
 else
     OUT="$DIST_DIR/$ARTIFACT_NAME"
     rm -f "$OUT"
@@ -1158,6 +1159,11 @@ done
 PYI_ARGS+=(--add-data "$SERVER_SRC:share/scrcpy")
 # udev 安装脚本（供界面的「安装 USB 权限」一键修复调用）
 PYI_ARGS+=(--add-data "$UDEV_SRC:.")
+
+# 剔除明显用不到的 Python 模块（界面不用它们；打不进去就少几 MB~十几 MB）
+for _ex in test idlelib lib2to3 pydoc doctest unittest distutils setuptools pip pkg_resources tkinter.test sqlite3.test lib2to3.tests setuptools._vendor; do
+    PYI_ARGS+=(--exclude-module "$_ex")
+done
 PYI_ARGS+=("$GUI_PY")
 
 if [ "$ONEDIR" -eq 1 ]; then
@@ -1169,6 +1175,11 @@ if [ "$ONEDIR" -eq 1 ]; then
     fi
     [ -x "$OUT" ] || die "没有生成 $OUT"
     info "已生成目录：$DIST_DIR/$ARTIFACT_NAME"
+
+    # ---- 体积报告：数据驱动裁剪（下一轮按真实占用决定删什么）----
+    info "  目录里最大的 20 个项目："
+    du -ah "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | sort -rh | sed -n '1,20p' | sed 's/^/      /' || true
+    info "  合计：$(du -sh "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
     # ---- 减小体积：PyInstaller 不会 strip，符号表占不少空间 ----
     if command -v strip >/dev/null 2>&1; then
         _before="$(du -sm "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
@@ -1187,11 +1198,11 @@ if [ "$ONEDIR" -eq 1 ]; then
         warn "没有 strip 命令，跳过符号剥离（体积会大一些）"
     fi
 
-    if ! tar -czf "$DIST_DIR/$ARTIFACT_NAME.tar.gz" \
+    if ! tar -cJf "$DIST_DIR/$ARTIFACT_NAME.tar.xz" \
             -C "$DIST_DIR" "$ARTIFACT_NAME" 2>/dev/null; then
-        die "打包成 tar.gz 失败：$DIST_DIR/$ARTIFACT_NAME.tar.gz"
+        die "打包成 tar.gz 失败：$DIST_DIR/$ARTIFACT_NAME.tar.xz"
     fi
-    info "已打包：$DIST_DIR/$ARTIFACT_NAME.tar.gz（$(du -h "$DIST_DIR/$ARTIFACT_NAME.tar.gz" | cut -f1)）"
+    info "已打包：$DIST_DIR/$ARTIFACT_NAME.tar.xz（$(du -h "$DIST_DIR/$ARTIFACT_NAME.tar.xz" | cut -f1)）"
 else
     # 旧式单文件（--onefile）：一个文件，但启动要自解压。
     # --runtime-tmpdir：很多开发板 / 掌机的 /tmp 是 tmpfs（占内存），解压会把
@@ -1255,7 +1266,7 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
     printf '%s\n' "=============================================================="
     printf '产物文件  ：%s\n' "$BASE_OUT"
     printf '\n【产物形态：解压即用】\n'
-    printf '  %s.tar.gz\n' "$BASE_OUT"
+    printf '  %s.tar.xz\n' "$BASE_OUT"
     printf '      解压后是一个目录，里面是可执行文件 + 全部依赖 + 内嵌的\n'
     printf '      scrcpy / adb / scrcpy-server，**启动不需要自解压**：\n'
     printf '        启动快、启动内存峰值低、不占临时空间\n'
@@ -1317,11 +1328,13 @@ MANIFEST_TXT="$DIST_DIR/${BASE_OUT}.txt"
         printf '     之后本机 adb connect 手机IP:端口 即可，不需要 adb pair\n'
     fi
     printf '\n【使用方法】\n'
-    printf '  tar -xzf %s.tar.gz\n' "$BASE_OUT"
+    printf '  tar -xJf %s.tar.xz\n' "$BASE_OUT"
     printf '  cd %s\n' "$BASE_OUT"
     printf '  ./%s                 # 开界面\n' "$BASE_OUT"
     printf '  ./%s --cli           # 命令行模式：列设备（低内存设备推荐）\n' "$BASE_OUT"
     printf '  ./%s --cli --serial <序列号>   # 命令行直接投屏\n' "$BASE_OUT"
+    printf '  ./%s --cli --serial <序列号> --low-spec\n' "$BASE_OUT"
+    printf '                                # 低配模式：1024 分辨率 / 30 帧 / 软件渲染\n' "$BASE_OUT"
     printf '  ./%s --selftest      # 只查内嵌组件是否完好\n' "$BASE_OUT"
     printf '\n【内存与磁盘要求（低配设备重要）】\n'
     printf '  内存：建议 >= 1.5 GB 可用。单文件包启动会先把自己解压出来\n'
