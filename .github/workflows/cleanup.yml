@@ -1,8 +1,10 @@
 name: Cleanup
 
-# 删除指定的 Release 与标签。
+# 删除指定的 Release 与标签；也可用来取消过期的构建。
 # 用法：git push origin cleanup-v1.0.0
 #   → 会删掉 v1.0.0 的 Release（含其资产）和 v1.0.0 这个标签
+# 用法：git push origin cleanup-cancel-stale
+#   → 取消所有排队/进行中的运行，但保留标签 v1.0.0 当前指向的那一轮
 #
 # 为什么存在：构建机的网络能访问 GitHub API，但助手所在的沙箱不能，
 # 所以"撤销一次发布"这件事交给 CI 做。
@@ -18,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  actions: write        # 取消过期运行需要它（gh api .../actions/runs/<id>/cancel）
 
 jobs:
   cleanup:
@@ -39,6 +42,42 @@ jobs:
           fi
           echo "本次要删除的目标：$target"
           echo
+
+          if [ "$target" = "cancel-stale" ]; then
+            echo "=== 取消过期/被取代的运行 ==="
+            # 找出标签 v1.0.0 当前指向的提交（注解标签要再解一层）
+            keep_sha="$(gh api "repos/${{ github.repository }}/git/ref/tags/v1.0.0" \
+              --jq '.object.sha' 2>/dev/null || true)"
+            obj_type="$(gh api "repos/${{ github.repository }}/git/ref/tags/v1.0.0" \
+              --jq '.object.type' 2>/dev/null || true)"
+            if [ "$obj_type" = "tag" ] && [ -n "$keep_sha" ]; then
+              keep_sha="$(gh api "repos/${{ github.repository }}/git/tags/$keep_sha" \
+                --jq '.object.sha' 2>/dev/null || true)"
+            fi
+            echo "保留的提交（标签 v1.0.0 指向）：${keep_sha:-未知}"
+            echo
+
+            gh api "repos/${{ github.repository }}/actions/runs?per_page=50" \
+              --jq '.workflow_runs[] | select(.status=="in_progress" or .status=="queued")
+                    | "\(.id)\t\(.head_branch)\t\(.head_sha)"' 2>&1 \
+            | while IFS="$(printf '\t')" read -r id br sha; do
+                [ -n "$id" ] || continue
+                if [ "$br" = "v1.0.0" ] && [ -n "$keep_sha" ] && [ "$sha" = "$keep_sha" ]; then
+                  echo "  保留 run $id（$br @ $(echo "$sha" | cut -c1-7)）—— 最新的正式构建"
+                  continue
+                fi
+                echo "  取消 run $id（$br @ $(echo "$sha" | cut -c1-7)）"
+                gh api -X POST "repos/${{ github.repository }}/actions/runs/$id/cancel" \
+                  2>&1 | sed -n '1,2p' || true
+              done
+
+            echo
+            echo "=== 取消后仍在排队/进行中的运行 ==="
+            gh api "repos/${{ github.repository }}/actions/runs?per_page=50" \
+              --jq '.workflow_runs[] | select(.status=="in_progress" or .status=="queued")
+                    | "\(.id)\t\(.head_branch)\t\(.head_sha[0:7])\t\(.name)"' 2>&1
+            exit 0
+          fi
 
           mkdir -p /tmp/cl
           exec > >(tee /tmp/cl/delete.log) 2>&1
