@@ -1,0 +1,5 @@
+tag=v1.0.0
+run=1
+job_status=success
+--- 检查输出 ---
+(没有 inspect.log)
