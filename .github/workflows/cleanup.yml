@@ -39,15 +39,34 @@ jobs:
           echo "本次要删除的目标：$target"
           echo
 
-          echo "=== 删除 Release（含资产）==="
-          if gh release delete "$target" --yes --cleanup-tag 2>&1; then
-            echo "已删除 Release 与标签：$target"
+          echo "=== ① 删除 Release（含其资产）==="
+          if gh release delete "$target" --yes 2>&1; then
+            echo "已删除 Release：$target"
           else
-            echo "没有找到 $target 的 Release（或已删除），继续尝试删标签"
-            gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$target" 2>&1 \
-              || echo "标签也不存在，无需处理"
+            echo "删除 Release 失败（也可能本来就没有）"
           fi
           echo
+
+          echo "=== ② 删除标签 ==="
+          if gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$target" 2>&1; then
+            echo "已删除标签：$target"
+          else
+            echo "删除标签失败（也可能本来就没有）"
+          fi
+          echo
+
+          echo "=== ③ 核对：该 Release 是否还在 ==="
+          still="$(gh api "repos/${{ github.repository }}/releases" \
+            --jq ".[] | select(.tag_name == \"$target\") | .tag_name" 2>/dev/null || true)"
+          if [ -n "$still" ]; then
+            echo "❌ 仍然存在：$still —— 删除没成功"
+          else
+            echo "✅ 已确认 $target 的 Release 不存在了"
+          fi
+          echo
+          if [ -n "$still" ]; then
+            exit 1
+          fi
 
           echo "=== 剩余 Release 列表 ==="
           gh api "repos/${{ github.repository }}/releases" \
