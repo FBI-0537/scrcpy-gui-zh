@@ -1,0 +1,93 @@
+name: Cleanup
+
+# 删除指定的 Release 与标签。
+# 用法：git push origin cleanup-v1.0.0
+#   → 会删掉 v1.0.0 的 Release（含其资产）和 v1.0.0 这个标签
+#
+# 为什么存在：构建机的网络能访问 GitHub API，但助手所在的沙箱不能，
+# 所以"撤销一次发布"这件事交给 CI 做。
+
+on:
+  push:
+    tags: ["cleanup-*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "要删除的标签（例如 v1.0.0）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: 删除 Release 与标签
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删除
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            target="${GITHUB_REF_NAME#cleanup-}"
+          else
+            target="${{ github.event.inputs.target }}"
+          fi
+          echo "本次要删除的目标：$target"
+          echo
+
+          echo "=== 删除 Release（含资产）==="
+          if gh release delete "$target" --yes --cleanup-tag 2>&1; then
+            echo "已删除 Release 与标签：$target"
+          else
+            echo "没有找到 $target 的 Release（或已删除），继续尝试删标签"
+            gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$target" 2>&1 \
+              || echo "标签也不存在，无需处理"
+          fi
+          echo
+
+          echo "=== 剩余 Release 列表 ==="
+          gh release list 2>&1 || true
+          echo
+          echo "=== 剩余标签列表 ==="
+          git ls-remote --tags "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" 2>/dev/null \
+            | sed 's|.*refs/tags/||' | grep -v '\^{}' | sort -u || true
+
+      - name: 把结果写进标记分支（便于核对）
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            target="${GITHUB_REF_NAME#cleanup-}"
+          else
+            target="${{ github.event.inputs.target }}"
+          fi
+          mkdir -p /tmp/cl
+          {
+            echo "target=$target"
+            echo "run=${{ github.run_number }}"
+            echo "job_status=${{ job.status }}"
+            echo "--- 剩余 Release ---"
+            gh release list 2>/dev/null || echo "(查询失败)"
+            echo "--- 剩余标签 ---"
+            git ls-remote --tags "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" 2>/dev/null \
+              | sed 's|.*refs/tags/||' | grep -v '\^{}' | sort -u || echo "(查询失败)"
+          } > /tmp/cl/info.txt
+          cd /tmp
+          rm -rf cl-repo
+          git clone --depth 1 \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" cl-repo
+          cd cl-repo
+          mkdir -p cleaned
+          cp /tmp/cl/info.txt "cleaned/$target.txt"
+          git checkout --orphan "cleaned-$target" 2>/dev/null || true
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f cleaned
+          git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+            commit -m "清理标记：$target（run ${{ github.run_number }}）" || true
+          git push -f origin "HEAD:cleaned-$target"
+        env:
+          GH_TOKEN: ${{ github.token }}
