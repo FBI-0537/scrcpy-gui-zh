@@ -1,0 +1,27 @@
+target=v1.0.0
+run=16
+job_status=success
+--- 删除日志（末尾 40 行）---
+=== ① 找到 Release ID ===
+找到的 Release ID：（没找到）
+
+=== ② 删除 Release（含其资产）===
+没有找到 v1.0.0 的 Release（可能已经删掉了）
+
+=== ③ 删除标签 ===
+已删除标签：v1.0.0
+
+=== ④ 核对：该 Release 是否还在 ===
+✅ 已确认 v1.0.0 的 Release 不存在了
+
+=== 剩余 Release 列表 ===
+
+=== 剩余标签列表 ===
+cleanup-v1.0.0
+cleanup-zzz-list
+repair-v1.0.0
+--- 剩余 Release ---
+--- 剩余标签 ---
+cleanup-v1.0.0
+cleanup-zzz-list
+repair-v1.0.0
