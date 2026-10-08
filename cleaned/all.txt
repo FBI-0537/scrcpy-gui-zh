@@ -1,0 +1,35 @@
+target=all
+run=5
+job_status=success
+--- 删除日志（末尾 40 行）---
+=== 删除所有 Release（保留：无）===
+  删除 Release：v1.0.2（id=406327429）
+  删除 Release：v1.0.1（id=406251212）
+
+=== 删除所有标签 ===
+  删除标签：refs/tags/cleanup-all
+  删除标签：refs/tags/cleanup-v1.0.0
+  删除标签：refs/tags/cleanup-zzz-nothing
+  删除标签：refs/tags/v1.0.1
+  删除标签：refs/tags/v1.0.2
+  删除标签：refs/tags/v1.0.3
+
+=== 核对 ===
+剩余 Release：
+剩余标签：
+{"message":"Not Found","documentation_url":"https://docs.github.com/rest/git/refs#get-all-references-in-a-namespace","status":"404"}gh: Not Found (HTTP 404)
+
+全部清理完成
+Cloning into 'cl-repo'...
+[cleaned-all (root-commit) e109214] 清理标记：all（run 5）
+ 1 file changed, 6 insertions(+)
+ create mode 100644 cleaned/all.txt
+remote: 
+remote: Create a pull request for 'cleaned-all' on GitHub by visiting:        
+remote:      https://github.com/FBI-0537/scrcpy-gui-zh/pull/new/cleaned-all        
+remote: 
+To https://github.com/FBI-0537/scrcpy-gui-zh.git
+ * [new branch]      HEAD -> cleaned-all
+--- 剩余 Release ---
+--- 剩余标签 ---
+(查询失败)
