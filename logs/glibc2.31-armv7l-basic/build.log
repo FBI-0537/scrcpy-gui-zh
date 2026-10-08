@@ -1,0 +1,87 @@
+
+[1m==> 1/6 检查环境与依赖（缺失或版本不对的，先装好再继续）[0m
+[32m[信息][0m 发行版  ：Ubuntu 20.04.6 LTS（Debian 系（apt/dpkg））
+[32m[信息][0m 目标架构：armv7l    libc：glibc 2.31
+[33m[注意][0m 检测到缺少以下依赖（发行版：Debian 系（apt/dpkg））：
+[33m[注意][0m   · 命令 python3 —— 运行与打包
+[33m[注意][0m   · python3 模块 tkinter —— 图形界面
+[33m[注意][0m   · python3 模块 venv —— 创建构建虚拟环境
+[33m[注意][0m   · 命令 objdump —— PyInstaller 解析 ELF 依赖（缺了报 objdump is required）
+[33m[注意][0m   · 命令 curl —— 下载依赖
+[33m[注意][0m   · 命令 file —— 校验产物
+[33m[注意][0m   · 命令 xz —— tar.xz 压缩（产物用这个，省 30-40%）
+[33m[注意][0m 将安装：binutils curl file python3 python3-tk python3-venv xz-utils
+[32m[信息][0m 正在安装：binutils curl file python3 python3-tk python3-venv xz-utils
+Reading package lists...
+Building dependency tree...
+Reading state information...
+E: Unable to locate package binutils
+[33m[注意][0m 直接安装失败，先刷新软件源再重试…
+Get:1 http://ports.ubuntu.com/ubuntu-ports focal InRelease [265 kB]
+Get:2 http://ports.ubuntu.com/ubuntu-ports focal-updates InRelease [128 kB]
+Get:3 http://ports.ubuntu.com/ubuntu-ports focal-backports InRelease [128 kB]
+Get:4 http://ports.ubuntu.com/ubuntu-ports focal-security InRelease [128 kB]
+Get:5 http://ports.ubuntu.com/ubuntu-ports focal/universe armhf Packages [10.9 MB]
+Get:6 http://ports.ubuntu.com/ubuntu-ports focal/restricted armhf Packages [10.8 kB]
+Get:7 http://ports.ubuntu.com/ubuntu-ports focal/main armhf Packages [1227 kB]
+Get:8 http://ports.ubuntu.com/ubuntu-ports focal/multiverse armhf Packages [141 kB]
+Get:9 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf Packages [2205 kB]
+Get:10 http://ports.ubuntu.com/ubuntu-ports focal-updates/multiverse armhf Packages [10.6 kB]
+Get:11 http://ports.ubuntu.com/ubuntu-ports focal-updates/universe armhf Packages [1266 kB]
+Get:12 http://ports.ubuntu.com/ubuntu-ports focal-updates/restricted armhf Packages [26.0 kB]
+Get:13 http://ports.ubuntu.com/ubuntu-ports focal-backports/universe armhf Packages [27.6 kB]
+Get:14 http://ports.ubuntu.com/ubuntu-ports focal-backports/main armhf Packages [54.2 kB]
+Get:15 http://ports.ubuntu.com/ubuntu-ports focal-security/restricted armhf Packages [25.6 kB]
+Get:16 http://ports.ubuntu.com/ubuntu-ports focal-security/main armhf Packages [1843 kB]
+Get:17 http://ports.ubuntu.com/ubuntu-ports focal-security/multiverse armhf Packages [6207 B]
+Get:18 http://ports.ubuntu.com/ubuntu-ports focal-security/universe armhf Packages [989 kB]
+Fetched 19.4 MB in 11s (1847 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  binutils-arm-linux-gnueabihf binutils-common libbinutils libctf-nobfd0
+  libctf0
+Suggested packages:
+  binutils-doc
+The following NEW packages will be installed:
+  binutils binutils-arm-linux-gnueabihf binutils-common libbinutils
+  libctf-nobfd0 libctf0
+0 upgraded, 6 newly installed, 0 to remove and 5 not upgraded.
+Need to get 2696 kB of archives.
+After this operation, 10.4 MB of additional disk space will be used.
+Get:1 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf binutils-common armhf 2.34-6ubuntu1.11 [208 kB]
+Get:2 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf libbinutils armhf 2.34-6ubuntu1.11 [317 kB]
+Get:3 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf libctf-nobfd0 armhf 2.34-6ubuntu1.11 [38.8 kB]
+Get:4 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf libctf0 armhf 2.34-6ubuntu1.11 [37.2 kB]
+Get:5 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf binutils-arm-linux-gnueabihf armhf 2.34-6ubuntu1.11 [2092 kB]
+Get:6 http://ports.ubuntu.com/ubuntu-ports focal-updates/main armhf binutils armhf 2.34-6ubuntu1.11 [3360 B]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 2696 kB in 2s (1197 kB/s)
+Selecting previously unselected package binutils-common:armhf.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4118 files and directories currently installed.)
+Preparing to unpack .../0-binutils-common_2.34-6ubuntu1.11_armhf.deb ...
+Unpacking binutils-common:armhf (2.34-6ubuntu1.11) ...
+Selecting previously unselected package libbinutils:armhf.
+Preparing to unpack .../1-libbinutils_2.34-6ubuntu1.11_armhf.deb ...
+Unpacking libbinutils:armhf (2.34-6ubuntu1.11) ...
+Selecting previously unselected package libctf-nobfd0:armhf.
+Preparing to unpack .../2-libctf-nobfd0_2.34-6ubuntu1.11_armhf.deb ...
+Unpacking libctf-nobfd0:armhf (2.34-6ubuntu1.11) ...
+Selecting previously unselected package libctf0:armhf.
+Preparing to unpack .../3-libctf0_2.34-6ubuntu1.11_armhf.deb ...
+Unpacking libctf0:armhf (2.34-6ubuntu1.11) ...
+Selecting previously unselected package binutils-arm-linux-gnueabihf.
+Preparing to unpack .../4-binutils-arm-linux-gnueabihf_2.34-6ubuntu1.11_armhf.deb ...
+Unpacking binutils-arm-linux-gnueabihf (2.34-6ubuntu1.11) ...
+Selecting previously unselected package binutils.
+Preparing to unpack .../5-binutils_2.34-6ubuntu1.11_armhf.deb ...
+Unpacking binutils (2.34-6ubuntu1.11) ...
+Setting up binutils-common:armhf (2.34-6ubuntu1.11) ...
+Setting up libctf-nobfd0:armhf (2.34-6ubuntu1.11) ...
+Setting up libbinutils:armhf (2.34-6ubuntu1.11) ...
+Setting up libctf0:armhf (2.34-6ubuntu1.11) ...
+Setting up binutils-arm-linux-gnueabihf (2.34-6ubuntu1.11) ...
+Setting up binutils (2.34-6ubuntu1.11) ...
+Processing triggers for libc-bin (2.31-0ubuntu9.17) ...
