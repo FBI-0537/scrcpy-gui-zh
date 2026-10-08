@@ -374,28 +374,15 @@ jobs:
       # 就这样没出现在 Release 上）。
       - uses: softprops/action-gh-release@v2
         with:
+          # 主力上传：白名单 glob（v1.0.1 的 14 个资产就是它传的，可靠）
+          files: |
+            assets/*.tar.gz
+            assets/*.txt
+            assets/*.exe
+            assets/SHA256SUMS.txt
           generate_release_notes: true
           fail_on_unmatched_files: false
 
-      - name: 逐个上传产物到 Release（显式，可核对）
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          cd assets
-          echo "=== 待上传文件 ==="
-          ls -lh *.tar.gz *.txt *.exe 2>/dev/null || true
-          for f in *.tar.gz *.txt *.exe SHA256SUMS.txt; do
-            [ -f "$f" ] || continue
-            echo "--- 上传 $f"
-            gh release upload "${{ github.ref_name }}" "$f" --clobber
-          done
-          echo
-          echo "=== Release 上实际的资产（核对用）==="
-          gh release view "${{ github.ref_name }}" \
-            --json assets --jq '.assets[] | "\(.name)\t\(.size)"' | tee /tmp/release-assets.txt
-          echo
-          echo "资产总数：$(grep -c . /tmp/release-assets.txt || echo 0)"
           body: |
             ## 怎么选版本（先看这一节）
 
@@ -500,3 +487,34 @@ jobs:
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "发布标记：${{ github.ref_name }}（run ${{ github.run_number }}）" || true
           git push -f origin "HEAD:released-${{ github.ref_name }}"
+
+
+
+      - name: 逐个上传产物到 Release（补充手段，失败不致命）
+        # 作为白名单的补充：万一某个文件被 glob 漏掉，这里会显式补上。
+        # continue-on-error：这一步失败不该让整个发布失败。
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd assets
+          echo "=== 待上传文件 ==="
+          ls -lh *.tar.gz *.txt *.exe 2>/dev/null || true
+          for f in *.tar.gz *.txt *.exe SHA256SUMS.txt; do
+            [ -f "$f" ] || continue
+            echo "--- 上传 $f"
+            gh release upload "${{ github.ref_name }}" "$f" --clobber
+          done
+
+      - name: 列出 Release 实际资产（核对用，失败不致命）
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          echo "=== Release 上实际的资产 ==="
+          gh release view "${{ github.ref_name }}" \
+            --json assets --jq '.assets[] | "\(.name)\t\(.size)"' 2>&1 | tee /tmp/release-assets.txt
+          echo
+          echo "资产总数：$(grep -c . /tmp/release-assets.txt 2>/dev/null || echo 0)"
