@@ -1,8 +1,11 @@
 name: Inspect
 
-# 检查 Release 里压缩包的真实结构。
+# 检查 Release 里压缩包的真实结构（用证据回答"为什么里面还有压缩包"）。
 # 用法：git push origin inspect-v1.0.0
 # 结果写到 inspected-<tag> 标记分支。
+#
+# 注意：必须写成**单个步骤** —— 实测 /tmp 里的文件在步骤之间不可靠
+# （第一次写成两步时，第二步读不到第一步的日志）。
 
 on:
   push:
@@ -25,79 +28,71 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: 下载并列出内容
+      - name: 下载、列出、并写标记（一个步骤搞定）
         shell: bash
         run: |
           set -e
           mkdir -p /tmp/insp
-          exec > >(tee /tmp/insp/inspect.log) 2>&1
+          LOG=/tmp/insp/inspect.log
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             t="${GITHUB_REF_NAME#inspect-}"
           else
             t="${{ github.event.inputs.tag }}"
           fi
-          echo "目标标签：$t"
-          echo
 
-          mkdir -p dl
-          cd dl
-          echo "=== Release 资产清单 ==="
-          gh release view "$t" --json assets --jq '.assets[] | "\(.name)\t\(.size)"' || echo "(列出失败)"
-          echo
+          {
+            echo "tag=$t"
+            echo "run=${{ github.run_number }}"
+            echo
+            echo "=== Release 资产清单 ==="
+            gh release view "$t" --json assets --jq '.assets[] | "\(.name)\t\(.size)"' || echo "(列出失败)"
+            echo
 
-          echo "=== 下载 Linux 压缩包 ==="
-          gh release download "$t" -p '*.tar.xz' || echo "(下载失败)"
-          ls -lh
-          echo
+            mkdir -p /tmp/insp/dl
+            cd /tmp/insp/dl
+            echo "=== 下载 Linux 压缩包 ==="
+            gh release download "$t" -p '*.tar.xz' || echo "(下载失败)"
+            ls -lh
+            echo
 
-          for f in *.tar.xz; do
-            [ -f "$f" ] || continue
-            echo "########## $f ##########"
-            echo "--- 顶层条目（前 30）---"
-            tar -tJf "$f" 2>/dev/null | sed -n '1,30p' || true
-            echo
-            echo "--- 条目总数 ---"
-            tar -tJf "$f" 2>/dev/null | wc -l || true
-            echo
-            echo "--- 第一层唯一名称 ---"
-            tar -tJf "$f" 2>/dev/null | awk -F/ '{print $1}' | sort -u | sed -n '1,10p' || true
-            echo
-            echo "--- [检查] 内部是否还有压缩包（tar.gz/tar.xz/tgz/zip/jar/7z）---"
-            if tar -tJf "$f" 2>/dev/null | grep -Ei '\.(tar\.(gz|xz|bz2)|tgz|zip|jar|7z|rar)$'; then
-              echo "  ↑ 上面这些就是嵌套的压缩包"
-            else
-              echo "  （没有嵌套压缩包）"
-            fi
-            echo
-            echo "--- 大于 1MB 的内嵌文件（前 25）---"
-            tar -tvJf "$f" 2>/dev/null \
-              | awk '$3 > 1048576 {printf "  %8.1f MB  %s\n", $3/1048576, $NF}' \
-              | sort -rn | sed -n '1,25p' || true
-            echo
-          done
-          echo "=== 完 ==="
+            for f in *.tar.xz; do
+              [ -f "$f" ] || continue
+              echo "########## $f ##########"
+              echo "--- 顶层条目（前 25）---"
+              tar -tJf "$f" 2>/dev/null | sed -n '1,25p' || true
+              echo
+              echo "--- 条目总数 ---"
+              tar -tJf "$f" 2>/dev/null | wc -l || true
+              echo
+              echo "--- 第一层唯一名称 ---"
+              tar -tJf "$f" 2>/dev/null | awk -F/ '{print $1}' | sort -u | sed -n '1,10p' || true
+              echo
+              echo "--- [检查] 内部是否还有压缩包（tar.gz/tar.xz/tgz/zip/jar/7z）---"
+              if tar -tJf "$f" 2>/dev/null | grep -Ei '\.(tar\.(gz|xz|bz2)|tgz|zip|jar|7z|rar)$'; then
+                echo "  ↑ 以上是嵌套的压缩包"
+              else
+                echo "  （没有嵌套压缩包）"
+              fi
+              echo
+              echo "--- 大于 1MB 的内嵌文件（前 25）---"
+              tar -tvJf "$f" 2>/dev/null \
+                | awk '$3 > 1048576 {printf "  %8.1f MB  %s\n", $3/1048576, $NF}' \
+                | sort -rn | sed -n '1,25p' || true
+              echo
+            done
+            echo "=== 完 ==="
+          } > "$LOG" 2>&1 || true
 
-      - name: 把结果写进标记分支
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -e
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then t="${GITHUB_REF_NAME#inspect-}"; else t="${{ github.event.inputs.tag }}"; fi
+          cat "$LOG"
+
           cd /tmp
           rm -rf insp
           git clone --depth 1 \
             "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" insp
           cd insp
           mkdir -p inspected
-          {
-            echo "tag=$t"
-            echo "run=${{ github.run_number }}"
-            echo "job_status=${{ job.status }}"
-            echo "--- 检查输出 ---"
-            cat /tmp/insp/inspect.log 2>/dev/null || echo "(没有 inspect.log)"
-          } > "inspected/$t.txt"
+          cp "$LOG" "inspected/$t.txt"
           git checkout --orphan "inspected-$t" 2>/dev/null || true
           git rm -r --cached . >/dev/null 2>&1 || true
           git add -f inspected
