@@ -350,6 +350,11 @@ jobs:
     needs: [plan, linux, windows]
     if: ${{ always() && github.ref_type == 'tag' && needs.linux.result == 'success' }}
     runs-on: ubuntu-latest
+    env:
+      # 这个 job 没有 actions/checkout，gh 无法推断仓库（会报 not a git repository）
+      # → gh release upload / gh release view 全部失败。显式给仓库路径。
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@v4
         with:

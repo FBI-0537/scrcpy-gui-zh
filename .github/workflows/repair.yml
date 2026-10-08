@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      # gh 在没有 actions/checkout 的 job 里无法推断仓库（实测报
+      # "not a git repository"），必须显式给。
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: 确定目标标签
         id: t
