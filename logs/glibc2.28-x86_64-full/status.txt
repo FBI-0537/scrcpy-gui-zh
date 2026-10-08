@@ -1,0 +1,4 @@
+label=glibc2.28-x86_64-full
+status=success
+run=58
+ref=v1.0.0
