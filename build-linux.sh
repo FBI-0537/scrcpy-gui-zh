@@ -1181,6 +1181,50 @@ if [ "$ONEDIR" -eq 1 ]; then
     info "  目录里最大的 20 个项目："
     du -ah "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | sort -rh | sed -n '1,20p' | sed 's/^/      /' || true
     info "  合计：$(du -sh "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
+    # ---- 数据驱动裁剪：删掉没有任何东西引用的动态库 ----
+    # 依据：构建日志里的体积报告（libavfilter / BLT / 多余的 SDL 等）
+    # 原则：先用 ldd 算出"真正被引用的集合"，只删不在集合里的，绝不拍脑袋。
+    if command -v ldd >/dev/null 2>&1; then
+        _root="$DIST_DIR/$ARTIFACT_NAME"
+        _int="$_root/_internal"
+        if [ -d "$_int" ]; then
+            _keep="$(mktemp 2>/dev/null || echo /tmp/keep.$$)"
+            : > "$_keep"
+            # 1) 收集"根"：主程序、scrcpy、adb、所有 Python 扩展模块、Tcl/Tk
+            _roots=""
+            for _f in "$_root/$ARTIFACT_NAME" "$_int/scrcpy" "$_int/adb"; do
+                [ -f "$_f" ] && _roots="$_roots $_f"
+            done
+            for _f in "$_int"/*.cpython-*.so "$_int"/libtcl*.so* "$_int"/libtk*.so*; do
+                [ -f "$_f" ] && _roots="$_roots $_f"
+            done
+            # 2) 对每个根跑 ldd（LD_LIBRARY_PATH 指向捆绑目录）并取并集
+            for _f in $_roots; do
+                LD_LIBRARY_PATH="$_int${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+                    ldd "$_f" 2>/dev/null \
+                    | sed -n 's/.*=> \([^ ]*\).*/\1/p;s/^[[:space:]]*\(\/[^ ]*\).*/\1/p'
+            done | sort -u > "$_keep"
+            info "  被引用的库：$(grep -c . "$_keep" 2>/dev/null || echo 0) 个"
+            # 3) 删除不在保留集里的 .so（有保险名单）
+            _freed=0
+            for _lib in "$_int"/*.so*; do
+                [ -f "$_lib" ] || continue
+                _base="$(basename "$_lib")"
+                case "$_base" in
+                    libpython*|libtcl*|libtk*|libBLT*) continue ;;
+                esac
+                grep -qxF "$_lib" "$_keep" 2>/dev/null && continue
+                grep -qF "/$_base" "$_keep" 2>/dev/null && continue
+                _sz="$(du -k "$_lib" 2>/dev/null | cut -f1)"
+                info "      · 裁剪未被引用的库：$_base（${_sz:-?}K）"
+                rm -f "$_lib" || true
+                _freed=$((_freed + ${_sz:-0}))
+            done
+            info "  裁剪合计释放：约 $((_freed / 1024))MB"
+            rm -f "$_keep" 2>/dev/null || true
+        fi
+    fi
+
     # ---- 减小体积：PyInstaller 不会 strip，符号表占不少空间 ----
     if command -v strip >/dev/null 2>&1; then
         _before="$(du -sm "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
