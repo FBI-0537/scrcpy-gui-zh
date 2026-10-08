@@ -1510,9 +1510,11 @@ class ScrcpyGui:
         ttk.Label(row1, text="  端口：").pack(side="left")
         self.var_port = tk.StringVar(value="5555")
         ttk.Entry(row1, textvariable=self.var_port, width=8).pack(side="left")
-        ttk.Button(row1, text="启用无线端口", command=self.wifi_enable).pack(side="left", padx=8)
+        ttk.Button(row1, text="启用无线端口",
+                   command=lambda: self._bg(self.wifi_enable)).pack(side="left", padx=8)
         ttk.Button(row1, text="连接", command=self.wifi_connect).pack(side="left")
-        ttk.Button(row1, text="自动发现设备", command=self.wifi_discover).pack(side="left", padx=8)
+        ttk.Button(row1, text="自动发现设备",
+                   command=lambda: self._bg(self.wifi_discover)).pack(side="left", padx=8)
 
         if _wireless_pairing_supported():
             box2 = ttk.LabelFrame(parent, text=" 方式二：安卓 11+ 无线调试配对（不必插线） ", padding=10)
@@ -1533,7 +1535,8 @@ class ScrcpyGui:
             self.var_pcode = tk.StringVar()
             ttk.Entry(row2, textvariable=self.var_pcode, width=10).pack(side="left")
             ttk.Button(row2, text="配对", command=self.wifi_pair).pack(side="left", padx=8)
-            ttk.Button(row2, text="自动发现配对端口", command=self.wifi_find_pair_port).pack(side="left")
+            ttk.Button(row2, text="自动发现配对端口",
+                       command=lambda: self._bg(self.wifi_find_pair_port)).pack(side="left")
 
             # ---- 方式三：二维码配对 ----
             box3 = ttk.LabelFrame(parent, text=" 方式三：二维码配对（推荐，手机扫码即可） ", padding=10)
@@ -1565,9 +1568,11 @@ class ScrcpyGui:
             self.btn_qr_copy = ttk.Button(right, text="复制二维码内容",
                                           command=self.qr_copy_payload, state="disabled")
             self.btn_qr_copy.pack(anchor="w")
-            ttk.Button(right, text="mDNS 诊断", command=self.wifi_mdns_diag).pack(anchor="w", pady=(4, 0))
+            ttk.Button(right, text="mDNS 诊断",
+                       command=lambda: self._bg(self.wifi_mdns_diag)).pack(anchor="w", pady=(4, 0))
             ttk.Button(right, text="启用备用 mDNS 后端",
-                       command=self.wifi_mdns_alt_backend).pack(anchor="w", pady=(4, 0))
+                       command=lambda: self._bg(self.wifi_mdns_alt_backend)
+                       ).pack(anchor="w", pady=(4, 0))
             ttk.Button(right, text="网络探测（测组播）",
                        command=self.wifi_net_probe).pack(anchor="w", pady=(4, 0))
             ttk.Label(right, text="（卡在「正在配对设备」时先点「网络探测」）",
@@ -2324,7 +2329,7 @@ class ScrcpyGui:
                 ip = token
                 break
         if ip:
-            self.var_ip.set(ip)
+            self.ui_call(self.var_ip.set, ip)
             self.log("检测到手机 WiFi IP：%s" % ip)
             self.log("请拔掉数据线，然后点「连接」。")
         else:
@@ -2347,8 +2352,8 @@ class ScrcpyGui:
                 break
         if found:
             ip, _, port = found.rpartition(":")
-            self.var_ip.set(ip)
-            self.var_port.set(port)
+            self.ui_call(self.var_ip.set, ip)
+            self.ui_call(self.var_port.set, port)
             self.log("已发现可连接设备：%s" % found)
             self.log("点「连接」即可。若列表为空，请确认手机已开「无线调试」且与本机同一局域网。")
         else:
@@ -2370,8 +2375,8 @@ class ScrcpyGui:
             return
         _kind, name, addr = pairs[0]
         ip, _, port = addr.rpartition(":")
-        self.var_pip.set(ip)
-        self.var_pport.set(port)
+        self.ui_call(self.var_pip.set, ip)
+        self.ui_call(self.var_pport.set, port)
         self.log("发现配对服务：%s（%s）" % (name, addr))
         self.log("IP 和端口已自动填好，现在只需输入手机上的 6 位配对码，点「配对」。")
 
@@ -2442,7 +2447,7 @@ class ScrcpyGui:
             for line in hint.splitlines():
                 self.log("！ " + line if line.strip() else "！")
             self.log("=" * 46)
-            messagebox.showwarning(APP_TITLE, hint)
+            self.ui_call(messagebox.showwarning, APP_TITLE, hint)
             return
 
         # 情况二：版本够新，但 mdns 探测失败 —— 多半是旧服务端占着 5037
@@ -2461,7 +2466,7 @@ class ScrcpyGui:
                 for line in hint.splitlines():
                     self.log("！ " + line if line.strip() else "！")
                 self.log("=" * 46)
-                messagebox.showwarning(APP_TITLE, hint)
+                self.ui_call(messagebox.showwarning, APP_TITLE, hint)
                 return
             self.log("→ 重启服务端后 mdns 可用了：根因是旧的 adb 服务端占用 5037")
 
@@ -2691,6 +2696,23 @@ class ScrcpyGui:
         # wifi_connect 内部已经是后台执行，这里不会再卡界面
         self.wifi_connect()
 
+    def _bg(self, fn, *args, **kw):
+        """把一个"内部会做 adb 调用"的方法整体丢到后台线程执行。
+
+        这些方法只用 self.log()（走队列，线程安全），不直接碰控件 ——
+        所以整体搬后台是安全的。方法内部的 Tk 变量写入 / 弹窗必须先改成
+        ui_call()，否则又会变成跨线程碰 Tk（那正是卡顿的根源）。
+        """
+        def _worker():
+            try:
+                fn(*args, **kw)
+            except Exception as exc:
+                try:
+                    self.log("！ 操作出错：%s" % exc)
+                except Exception:
+                    pass
+        threading.Thread(target=_worker, daemon=True).start()
+
     def _run_async(self, work, done=None, running_hint=""):
         """把耗时操作放后台线程，避免卡住界面。
 
@@ -2778,7 +2800,7 @@ class ScrcpyGui:
             for ln in lines:
                 self.log(ln)
             if rc == 0 and "Successfully paired" in out:
-                self.var_ip.set(ip)
+                self.ui_call(self.var_ip.set, ip)
                 self.log("配对成功。现在用「连接」按钮（端口填无线调试页显示的连接端口）连接。")
             else:
                 self.log("！ 配对失败，请核对配对码与配对端口（不是连接端口）。")
@@ -2838,7 +2860,7 @@ class ScrcpyGui:
             self.log("！ 当前 adb 太旧（platform-tools %s），不支持无线配对" % ver)
             for line in hint.splitlines():
                 self.log("！ " + line if line.strip() else "！")
-            messagebox.showwarning(APP_TITLE, hint)
+            self.ui_call(messagebox.showwarning, APP_TITLE, hint)
             return False
 
         ok, raw = adb_mdns_probe()
