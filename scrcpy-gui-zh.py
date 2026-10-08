@@ -2637,8 +2637,34 @@ class ScrcpyGui:
     def _after_qr_connect(self, ip, port):
         self.var_ip.set(ip)
         self.var_port.set(port)
-        self.lbl_qr.configure(text="配对成功，已填入连接地址")
+        self.lbl_qr.configure(text="配对成功，已填入连接地址\n正在自动连接…")
+        # wifi_connect 内部已经是后台执行，这里不会再卡界面
         self.wifi_connect()
+
+    def _run_async(self, work, done=None, running_hint=""):
+        """把耗时操作放后台线程，避免卡住界面。
+
+        为什么需要：adb 的 pair/connect/disconnect 都可能要几秒到几十秒，
+        在主线程里同步调用会让整个 Tk 界面**完全不响应**（用户实测：
+        扫码配对成功后自动连接时页面卡住）。
+
+        work: 后台线程里执行的函数，返回值原样交给 done
+        done: 在**主线程**里执行的回调 done(result)
+        """
+        if running_hint:
+            self.log(running_hint)
+
+        def _worker():
+            try:
+                res = work()
+            except Exception as exc:          # 后台线程不能把异常抛给 Tk
+                res = (1, "后台操作异常：%s" % exc)
+            if done is not None:
+                try:
+                    self.root.after(0, lambda: done(res))
+                except Exception:
+                    pass
+        threading.Thread(target=_worker, daemon=True).start()
 
     def wifi_connect(self):
         if not self._need_adb():
@@ -2649,14 +2675,21 @@ class ScrcpyGui:
             messagebox.showwarning(APP_TITLE, "请先填写手机 IP。")
             return
         cmd = [ADB, "connect", "%s:%s" % (ip, port)]
-        rc, out = run(cmd, timeout=30)
         self.log("$ " + " ".join(cmd))
-        self.log(out.strip() or "(无输出)")
-        if rc == 0 and "connected" in out:
-            self.log("连接成功，回到「投屏」页刷新设备。")
-            self.refresh_devices()
-        else:
-            self.log("！ 连接失败。%s" % connect_trouble_hint())
+
+        def work():
+            return run(cmd, timeout=30)
+
+        def done(res):
+            rc, out = res
+            self.log(out.strip() or "(无输出)")
+            if rc == 0 and "connected" in out:
+                self.log("连接成功，回到「投屏」页刷新设备。")
+                self.refresh_devices()
+            else:
+                self.log("！ 连接失败。%s" % connect_trouble_hint())
+
+        self._run_async(work, done, "正在连接（后台执行，界面不会卡）…")
 
     def wifi_pair(self):
         if not self._require_wireless_adb("方式二：配对码配对"):
@@ -2671,34 +2704,52 @@ class ScrcpyGui:
             messagebox.showwarning(APP_TITLE, "请填写配对 IP、配对端口和配对码。")
             return
         cmd = [ADB, "pair", "%s:%s" % (ip, pport), code]
-        rc, out = run(cmd, timeout=60)
         self.log("$ adb pair %s:%s ******" % (ip, pport))
-        self.log(out.strip() or "(无输出)")
 
-        # 失败且像是服务端状态问题（旧的 adb 服务端还占着 5037）时，重启服务端重试一次
-        if "Successfully paired" not in out:
-            low = out.lower()
-            if "unknown" in low or "host service" in low or "server" in low:
-                self.log("！ 看起来是 adb 服务端状态不对（客户端/服务端版本不一致）")
-                self.log("！ 正在重启 adb 服务端后重试一次…")
-                adb_server_reset()
-                rc, out = run(cmd, timeout=60)
-                self.log("$ adb pair %s:%s ******  （重启服务端后重试）" % (ip, pport))
-                self.log(out.strip() or "(无输出)")
+        def work():
+            # 后台线程里跑：失败且像是服务端状态问题（旧的 adb 服务端占着 5037）时
+            # 重启服务端再试一次。
+            lines = []
+            rc, out = run(cmd, timeout=60)
+            lines.append(out.strip() or "(无输出)")
+            if "Successfully paired" not in out:
+                low = out.lower()
+                if "unknown" in low or "host service" in low or "server" in low:
+                    lines.append("！ 看起来是 adb 服务端状态不对（客户端/服务端版本不一致）")
+                    lines.append("！ 正在重启 adb 服务端后重试一次…")
+                    adb_server_reset()
+                    rc, out = run(cmd, timeout=60)
+                    lines.append("$ adb pair %s:%s ******  （重启服务端后重试）" % (ip, pport))
+                    lines.append(out.strip() or "(无输出)")
+            return rc, out, lines
 
-        if rc == 0 and "Successfully paired" in out:
-            self.var_ip.set(ip)
-            self.log("配对成功。现在用「连接」按钮（端口填无线调试页显示的连接端口）连接。")
-        else:
-            self.log("！ 配对失败，请核对配对码与配对端口（不是连接端口）。")
+        def done(res):
+            rc, out, lines = res
+            for ln in lines:
+                self.log(ln)
+            if rc == 0 and "Successfully paired" in out:
+                self.var_ip.set(ip)
+                self.log("配对成功。现在用「连接」按钮（端口填无线调试页显示的连接端口）连接。")
+            else:
+                self.log("！ 配对失败，请核对配对码与配对端口（不是连接端口）。")
+
+        self._run_async(work, done, "正在配对（后台执行，界面不会卡）…")
 
     def wifi_disconnect(self):
         if not self._need_adb():
             return
-        rc, out = run([ADB, "disconnect"], timeout=20)
+        cmd = [ADB, "disconnect"]
         self.log("$ adb disconnect")
-        self.log(out.strip() or "(无输出)")
-        self.refresh_devices()
+
+        def work():
+            return run(cmd, timeout=20)
+
+        def done(res):
+            rc, out = res
+            self.log(out.strip() or "(无输出)")
+            self.refresh_devices()
+
+        self._run_async(work, done, "正在断开（后台执行）…")
 
     # ---------- 关闭 ----------
 
