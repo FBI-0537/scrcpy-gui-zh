@@ -41,6 +41,61 @@ jobs:
 
           mkdir -p /tmp/cl
           exec > >(tee /tmp/cl/delete.log) 2>&1
+          if [ "$target" = "all" ]; then
+            keep="${KEEP:-}"
+            echo "=== 删除所有 Release（保留：${keep:-无}）==="
+            ids="$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[].id' 2>/dev/null || true)"
+            for rid in $ids; do
+              tag="$(gh api "repos/${{ github.repository }}/releases/$rid" --jq '.tag_name' 2>/dev/null || true)"
+              [ -n "$tag" ] || continue
+              case " $keep " in
+                *" $tag "*) echo "  保留 $tag"; continue ;;
+              esac
+              echo "  删除 Release：$tag（id=$rid）"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/$rid" 2>&1 || echo "    （删除失败）"
+            done
+            echo
+            echo "=== 删除所有标签 ==="
+            refs="$(gh api "repos/${{ github.repository }}/git/refs/tags" --paginate --jq '.[].ref' 2>/dev/null || true)"
+            for ref in $refs; do
+              short="${ref#refs/}"
+              echo "  删除标签：$ref"
+              gh api -X DELETE "repos/${{ github.repository }}/git/refs/$short" 2>&1 || echo "    （删除失败）"
+            done
+            echo
+            echo "=== 核对 ==="
+            echo "剩余 Release："
+            gh api "repos/${{ github.repository }}/releases" --jq '.[].tag_name' 2>&1 || true
+            echo "剩余标签："
+            gh api "repos/${{ github.repository }}/git/refs/tags" --jq '.[].ref' 2>&1 || true
+            echo
+            echo "全部清理完成"
+            mkdir -p /tmp/cl
+            {
+              echo "target=all"
+              echo "run=${{ github.run_number }}"
+              echo "job_status=${{ job.status }}"
+              echo "--- 剩余 Release ---"
+              gh api "repos/${{ github.repository }}/releases" --jq '.[].tag_name' 2>&1 || true
+              echo "--- 剩余标签 ---"
+              gh api "repos/${{ github.repository }}/git/refs/tags" --jq '.[].ref' 2>&1 || true
+            } > /tmp/cl/info.txt
+            cd /tmp
+            rm -rf cl-repo
+            git clone --depth 1 \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" cl-repo
+            cd cl-repo
+            mkdir -p cleaned
+            cp /tmp/cl/info.txt "cleaned/all.txt"
+            git checkout --orphan cleaned-all 2>/dev/null || true
+            git rm -r --cached . >/dev/null 2>&1 || true
+            git add -f cleaned
+            git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+              commit -m "清理标记：all（run ${{ github.run_number }}）" || true
+            git push -f origin "HEAD:cleaned-all"
+            exit 0
+          fi
+
           echo "=== ① 找到 Release ID ==="
           # 用 ID 删除，而不是 gh release delete <tag>：
           # 标签可能已经被删掉（实测踩过），而按标签找不到 Release 时删除会失败。
