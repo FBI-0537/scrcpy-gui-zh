@@ -1,0 +1,41 @@
+========================================================================
+文件：scrcpy-gui-zh-1.0.0-windows-x86_64.exe
+大小：24.2 MB（25396915 字节）
+  格式：PE   架构：x86_64（64 位）
+  [OK]   架构与文件名一致（x86_64）
+  [OK]   是 PyInstaller 单文件包（找到 MEI cookie）
+  [OK]   包内含 scrcpy.exe
+  [OK]   包内含 adb.exe 及其 USB 驱动 DLL
+  [OK]   包内含 scrcpy-server
+  [OK]   包内含 Tcl/Tk（图形界面）
+  [OK]   包内含 segno（二维码）
+  [OK]   依赖库特征命中 7/8 项（依赖收集生效）
+  包内库/可执行文件清单（69 个，最多列 24 个）：
+        ADVAPI32.dll
+        AdbWinApi.dll
+        AdbWinUsbApi.dll
+        COMCTL32.dll
+        GDI32.dll
+        KERNEL32.dll
+        SDL3.dll
+        USER32.dll
+        VCRUNTIME140.dll
+        VCRUNTIME140_1.dll
+        adb.exe
+        avcodec-63.dll
+        avformat-63.dll
+        avutil-61.dll
+        bapi-ms-win-core-console-l1-1-0.dll
+        bapi-ms-win-core-datetime-l1-1-0.dll
+        bapi-ms-win-core-debug-l1-1-0.dll
+        bapi-ms-win-core-errorhandling-l1-1-0.dll
+        bapi-ms-win-core-fibers-l1-1-0.dll
+        bapi-ms-win-core-fibers-l1-1-1.dll
+        bapi-ms-win-core-file-l1-1-0.dll
+        bapi-ms-win-core-file-l1-2-0.dll
+        bapi-ms-win-core-file-l2-1-0.dll
+        bapi-ms-win-core-handle-l1-1-0.dll
+        …（还有 45 个）
+  ==> 通过
+========================================================================
+汇总：1 个产物，1 个通过，0 个不通过（另有 0 个附带文件已跳过）

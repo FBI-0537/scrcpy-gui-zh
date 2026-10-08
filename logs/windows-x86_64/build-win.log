@@ -1,0 +1,184 @@
+
+==> 1/7 检查环境
+[信息] python：C:\hostedtoolcache\windows\Python\3.12.10\x64\python.exe
+Python 3.12.10
+[信息] tkinter 可用
+
+==> 2/7 安装/检查 PyInstaller
+[信息] 未检测到 PyInstaller，正在安装…
+Collecting pyinstaller
+  Downloading pyinstaller-6.22.3-py3-none-win_amd64.whl.metadata (8.5 kB)
+Collecting altgraph (from pyinstaller)
+  Downloading altgraph-0.17.5-py2.py3-none-any.whl.metadata (7.5 kB)
+Requirement already satisfied: packaging>=22.0 in C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages (from pyinstaller) (26.3)
+Collecting pefile>=2022.5.30 (from pyinstaller)
+  Downloading pefile-2024.8.26-py3-none-any.whl.metadata (1.4 kB)
+Collecting pyinstaller-hooks-contrib>=2026.7 (from pyinstaller)
+  Downloading pyinstaller_hooks_contrib-2026.8-py3-none-any.whl.metadata (16 kB)
+Collecting pywin32-ctypes>=0.2.1 (from pyinstaller)
+  Downloading pywin32_ctypes-0.2.3-py3-none-any.whl.metadata (3.9 kB)
+Collecting setuptools>=42.0.0 (from pyinstaller)
+  Downloading setuptools-84.0.0-py3-none-any.whl.metadata (6.6 kB)
+Downloading pyinstaller-6.22.3-py3-none-win_amd64.whl (1.5 MB)
+   ---------------------------------------- 1.5/1.5 MB 18.9 MB/s  0:00:00
+Downloading pefile-2024.8.26-py3-none-any.whl (74 kB)
+Downloading pyinstaller_hooks_contrib-2026.8-py3-none-any.whl (462 kB)
+Downloading pywin32_ctypes-0.2.3-py3-none-any.whl (30 kB)
+Downloading setuptools-84.0.0-py3-none-any.whl (818 kB)
+   ---------------------------------------- 818.2/818.2 kB 11.8 MB/s  0:00:00
+Downloading altgraph-0.17.5-py2.py3-none-any.whl (21 kB)
+Installing collected packages: altgraph, setuptools, pywin32-ctypes, pyinstaller-hooks-contrib, pefile, pyinstaller
+
+Successfully installed altgraph-0.17.5 pefile-2024.8.26 pyinstaller-6.22.3 pyinstaller-hooks-contrib-2026.8 pywin32-ctypes-0.2.3 setuptools-84.0.0
+
+[信息] PyInstaller 就绪
+[信息] 安装二维码库 segno（用于二维码配对）…
+Collecting segno
+  Downloading segno-1.6.6-py3-none-any.whl.metadata (7.7 kB)
+Downloading segno-1.6.6-py3-none-any.whl (76 kB)
+Installing collected packages: segno
+Successfully installed segno-1.6.6
+
+
+==> 3/7 获取 scrcpy-win64
+[信息] 项目内没有 scrcpy，自动下载到 vendor\scrcpy（不污染系统目录）…
+[信息] 查询 scrcpy 最新版本…
+[信息] 最新版本：v5.0.1
+[信息] 下载：https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-win64-v5.0.1.zip
+[信息] 下载完成（10.7 MB），正在解压…
+[信息] 已安装到项目目录：D:\a\scrcpy-gui-zh\scrcpy-gui-zh\vendor\scrcpy
+
+==> 4/7 清理旧产物
+
+==> 5/7 PyInstaller 打包
+[信息] 内嵌 scrcpy-server
+[信息] 内嵌 10 个 exe / DLL：adb.exe, AdbWinApi.dll, AdbWinUsbApi.dll, avcodec-63.dll …
+288 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+288 INFO: Python: 3.12.10
+311 INFO: Platform: Windows-2025Server-10.0.26100-SP0
+311 INFO: Python environment: C:\hostedtoolcache\windows\Python\3.12.10\x64
+311 INFO: wrote D:\a\scrcpy-gui-zh\scrcpy-gui-zh\scrcpy-gui-zh.spec
+315 INFO: Removing temporary files and cleaning cache in C:\Users\runneradmin\AppData\Local\pyinstaller
+315 INFO: Module search paths (PYTHONPATH):
+['D:\\a\\scrcpy-gui-zh\\scrcpy-gui-zh',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python312.zip',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\DLLs',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages',
+ 'D:\\a\\scrcpy-gui-zh\\scrcpy-gui-zh']
+546 INFO: Appending 'binaries' from .spec
+546 INFO: Appending 'datas' from .spec
+548 INFO: checking Analysis
+548 INFO: Building Analysis because Analysis-00.toc is non existent
+548 INFO: Looking for Python shared library...
+548 INFO: Using Python shared library: C:\hostedtoolcache\windows\Python\3.12.10\x64\python312.dll
+548 INFO: Running Analysis Analysis-00.toc
+548 INFO: Target bytecode optimization level: 0
+548 INFO: Initializing module dependency graph...
+552 INFO: Initializing module graph hook caches...
+568 INFO: Analyzing modules for base_library.zip ...
+1561 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+1676 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+3172 INFO: Processing standard module hook 'hook-math.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+3394 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+5163 INFO: Caching module dependency graph...
+5208 INFO: Analyzing D:\a\scrcpy-gui-zh\scrcpy-gui-zh\scrcpy-gui-zh.py
+5336 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+5376 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+5376 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+5790 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+5908 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6049 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6441 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6441 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6444 INFO: SetuptoolsInfo: initializing cached setuptools info...
+7110 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+7117 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7140 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7249 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7257 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7259 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+7269 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7271 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+7473 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7483 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7494 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7813 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7815 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7822 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7822 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+8319 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8319 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+8834 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8834 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+8882 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+8901 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8901 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+8922 INFO: Processing module hooks (post-graph stage)...
+9363 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+9820 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+9832 INFO: Performing binary vs. data reclassification (946 entries)
+10629 INFO: Looking for ctypes DLLs
+10678 INFO: Analyzing run-time hooks ...
+10681 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10683 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10683 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10685 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10687 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10715 INFO: Creating base_library.zip...
+10737 INFO: Looking for dynamic libraries
+11048 INFO: Extra DLL search directories (AddDllDirectory): []
+11048 INFO: Extra DLL search directories (PATH): []
+11966 INFO: Warnings written to D:\a\scrcpy-gui-zh\scrcpy-gui-zh\build\scrcpy-gui-zh\warn-scrcpy-gui-zh.txt
+12005 INFO: Graph cross-reference written to D:\a\scrcpy-gui-zh\scrcpy-gui-zh\build\scrcpy-gui-zh\xref-scrcpy-gui-zh.html
+12042 INFO: checking PYZ
+12042 INFO: Building PYZ because PYZ-00.toc is non existent
+12044 INFO: Building PYZ (ZlibArchive) D:\a\scrcpy-gui-zh\scrcpy-gui-zh\build\scrcpy-gui-zh\PYZ-00.pyz
+12452 INFO: Building PYZ (ZlibArchive) D:\a\scrcpy-gui-zh\scrcpy-gui-zh\build\scrcpy-gui-zh\PYZ-00.pyz completed successfully.
+12489 INFO: checking PKG
+12489 INFO: Building PKG because PKG-00.toc is non existent
+12489 INFO: Building PKG (CArchive) scrcpy-gui-zh.pkg
+19613 INFO: Building PKG (CArchive) scrcpy-gui-zh.pkg completed successfully.
+19635 INFO: Bootloader C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+19635 INFO: checking EXE
+19635 INFO: Building EXE because EXE-00.toc is non existent
+19635 INFO: Building EXE from EXE-00.toc
+19635 INFO: Copying bootloader EXE to D:\a\scrcpy-gui-zh\scrcpy-gui-zh\dist\scrcpy-gui-zh.exe
+19637 INFO: Copying icon to EXE
+19639 INFO: Copying 0 resources to EXE
+19639 INFO: Embedding manifest in EXE
+19641 INFO: Appending PKG archive to EXE
+19655 INFO: Fixing EXE headers
+19795 INFO: Building EXE from EXE-00.toc completed successfully.
+19815 INFO: Build complete! The results are available in: D:\a\scrcpy-gui-zh\scrcpy-gui-zh\dist
+
+==> 6/7 附带 scrcpy（可选）
+[信息] -SingleFile 模式：scrcpy / adb / 依赖库已全部内嵌进 exe
+
+==> 7/7 完成
+[信息] 产物：D:\a\scrcpy-gui-zh\scrcpy-gui-zh\dist\scrcpy-gui-zh.exe（24.2 MB）
+[信息] 这一个 exe 就是全部，拷到任何 Windows 机器双击即可
+[信息] scrcpy 安装在项目目录：D:\a\scrcpy-gui-zh\scrcpy-gui-zh\vendor\scrcpy（不想要就删掉整个 vendor 文件夹）
+
+────────────────────────────────────────────────────────────
+使用方法：
+
+  ★ 先决定 scrcpy 放哪 —— 三种方式，脚本都会自动处理：
+      1) 不管它：脚本自动下载到 项目\vendor\scrcpy\（推荐）
+      2) 自己下：.\build-windows.cmd -BundleScrcpy 'C:\scrcpy'
+      3) 塞系统：解压 scrcpy-win64 到 C:\scrcpy（程序运行时会自动找到）
+
+  打包形态：
+      单个 exe（自包含）       .\build-windows.cmd -SingleFile -Clean
+      绿色目录（exe + scrcpy） .\build-windows.cmd -Clean
+      只要 exe                 .\build-windows.cmd -NoAutoScrcpy -Clean
+
+  双击没反应时：加 -Console 重新构建，在命令行里跑，就能看到报错
+
+  常见问题（详见 docs\TROUBLESHOOTING.md）：
+    · 下载/安装失败且报 127.0.0.1:7890 → 系统代理开着但代理软件没运行
+    · 杀毒软件报毒       → PyInstaller 通病，加白名单
+    · 识别不到设备       → 数据线 / 驱动 / 授权弹窗，或改用无线调试
+    · 首次启动慢         → onefile 要解压到临时目录，-SingleFile 更明显
+────────────────────────────────────────────────────────────
