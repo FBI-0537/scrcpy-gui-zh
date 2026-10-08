@@ -64,6 +64,16 @@ jobs:
                     | "\(.id)\t\(.head_branch)\t\(.head_sha)"' 2>&1 \
             | while IFS="$(printf '\t')" read -r id br sha; do
                 [ -n "$id" ] || continue
+                # 别取消自己（否则这次清理会被自己打断）
+                if [ "$id" = "${GITHUB_RUN_ID}" ]; then
+                  echo "  跳过 run $id（就是本次清理自己）"
+                  continue
+                fi
+                case "$br" in
+                  cleanup-*)
+                    echo "  跳过 run $id（$br，另一轮清理）"
+                    continue ;;
+                esac
                 if [ "$br" = "v1.0.0" ] && [ -n "$keep_sha" ] && [ "$sha" = "$keep_sha" ]; then
                   echo "  保留 run $id（$br @ $(echo "$sha" | cut -c1-7)）—— 最新的正式构建"
                   continue
