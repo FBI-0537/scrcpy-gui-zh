@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read        # gh run list / gh run download 需要它（只写 contents 时其它 scope 默认 none）
 
 jobs:
   repair:
@@ -37,11 +38,34 @@ jobs:
       - name: 找最近一次成功的 Release 运行
         id: find
         run: |
+          set -e
+          # 方式一：按工作流文件名查（不吞 stderr，出错要看得见）
+          echo "--- 方式一：gh run list --workflow=release.yml ---"
           rid="$(gh run list --workflow=release.yml --status=success --limit 1 \
-            --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+            --json databaseId --jq '.[0].databaseId' 2>&1 || true)"
+          echo "$rid"
+          case "$rid" in
+            ''|*[!0-9]*) rid="" ;;
+          esac
+          # 方式二（兜底）：列出最近的成功运行，按 workflowName 过滤
+          if [ -z "$rid" ]; then
+            echo "--- 方式二：列出成功运行并按名字过滤 ---"
+            rid="$(gh run list --status=success --limit 30 \
+              --json databaseId,workflowName,name \
+              --jq '[.[] | select((.workflowName // "") == "Release" or (.name // "") | startswith("Release"))][0].databaseId' 2>&1 || true)"
+            echo "$rid"
+            case "$rid" in
+              ''|*[!0-9]*) rid="" ;;
+            esac
+          fi
+          # 方式三（再兜底）：不筛状态，取最近一次有 artifact 的运行
+          if [ -z "$rid" ]; then
+            echo "--- 方式三：最近 20 次运行里挑一个 ---"
+            gh run list --limit 20 --json databaseId,workflowName,conclusion 2>&1 | sed -n '1,40p' || true
+          fi
           echo "run_id=$rid" >> "$GITHUB_OUTPUT"
-          echo "找到的 run_id：${rid:-（没找到）}"
-          [ -n "$rid" ] || { echo "没有成功的构建可补传"; exit 1; }
+          echo "最终采用的 run_id：${rid:-（没找到）}"
+          [ -n "$rid" ] || { echo "没有找到可用于补传的运行"; exit 1; }
 
       - name: 下载那次运行的全部 artifact
         run: |
