@@ -1,0 +1,45 @@
+附带文件（不按产物校验，跳过 2 个）：
+    scrcpy-gui-zh-1.0.3-linux-glibc2.31-x86_64-full.tar.gz
+    scrcpy-gui-zh-1.0.3-linux-glibc2.31-x86_64-full.txt
+
+========================================================================
+文件：scrcpy-gui-zh-1.0.3-linux-glibc2.31-x86_64-full
+大小：1.2 MB（1239704 字节）
+  格式：ELF   架构：x86_64（64 位）
+  [OK]   架构与文件名一致（x86_64）
+  形态：目录版（--onedir，解压即用）
+  [OK]   目录版结构完整（_internal=有, PYZ=无, base_library=有）
+  [OK]   目录内含 scrcpy
+  [OK]   目录内含 adb
+  [OK]   目录内含 scrcpy-server
+  [OK]   目录内含 udev 安装脚本
+  [OK]   依赖库 82 个（依赖收集生效）
+  目录内库/可执行文件清单（82 个，最多列 24 个）：
+        _bz2.cpython-38-x86_64-linux-gnu.so
+        _codecs_cn.cpython-38-x86_64-linux-gnu.so
+        _codecs_hk.cpython-38-x86_64-linux-gnu.so
+        _codecs_iso2022.cpython-38-x86_64-linux-gnu.so
+        _codecs_jp.cpython-38-x86_64-linux-gnu.so
+        _codecs_kr.cpython-38-x86_64-linux-gnu.so
+        _codecs_tw.cpython-38-x86_64-linux-gnu.so
+        _ctypes.cpython-38-x86_64-linux-gnu.so
+        _hashlib.cpython-38-x86_64-linux-gnu.so
+        _json.cpython-38-x86_64-linux-gnu.so
+        _lzma.cpython-38-x86_64-linux-gnu.so
+        _multibytecodec.cpython-38-x86_64-linux-gnu.so
+        _opcode.cpython-38-x86_64-linux-gnu.so
+        _queue.cpython-38-x86_64-linux-gnu.so
+        _ssl.cpython-38-x86_64-linux-gnu.so
+        _tkinter.cpython-38-x86_64-linux-gnu.so
+        libBLT.2.5.so.8.6
+        libFLAC.so.8
+        libSDL2-2.0.so.0
+        libSDL3.so.0
+        libX11.so.6
+        libXau.so.6
+        libXcursor.so.1
+        libXdmcp.so.6
+  可执行文件：scrcpy-gui-zh-1.0.3-linux-glibc2.31-x86_64-full
+  结论：通过
+========================================================================
+汇总：1 个产物，1 个通过，0 个不通过（另有 2 个附带文件已跳过）
