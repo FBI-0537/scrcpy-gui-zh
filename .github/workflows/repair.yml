@@ -39,6 +39,12 @@ jobs:
         id: find
         run: |
           set -e
+          mkdir -p /tmp/rep
+          exec > >(tee /tmp/rep/find.log) 2>&1
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-（空）}"
+          echo "GH_HOST=${GH_HOST:-（空）} GH_REPO=${GH_REPO:-（空）}"
+          echo "gh 版本：$(gh --version 2>&1 | head -1)"
+          echo
           # 方式一：按工作流文件名查（不吞 stderr，出错要看得见）
           echo "--- 方式一：gh run list --workflow=release.yml ---"
           rid="$(gh run list --workflow=release.yml --status=success --limit 1 \
@@ -62,6 +68,16 @@ jobs:
           if [ -z "$rid" ]; then
             echo "--- 方式三：最近 20 次运行里挑一个 ---"
             gh run list --limit 20 --json databaseId,workflowName,conclusion 2>&1 | sed -n '1,40p' || true
+          fi
+          # 方式四（最兜底）：直接用 API 列运行（显式带仓库路径）
+          if [ -z "$rid" ]; then
+            echo "--- 方式四：gh api 直接列运行 ---"
+            rid="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=30&status=success" \
+              --jq '.workflow_runs[] | select(.name | startswith("Release")) | .id' 2>&1 | head -1 || true)"
+            echo "$rid"
+            case "$rid" in
+              ''|*[!0-9]*) rid="" ;;
+            esac
           fi
           echo "run_id=$rid" >> "$GITHUB_OUTPUT"
           echo "最终采用的 run_id：${rid:-（没找到）}"
@@ -131,6 +147,8 @@ jobs:
             echo "run=${{ github.run_number }}"
             echo "job_status=${{ job.status }}"
             echo "source_run=${{ steps.find.outputs.run_id }}"
+            echo "--- 查找步骤的输出 ---"
+            cat /tmp/rep/find.log 2>/dev/null | sed -n '1,60p' || echo "(没有 find.log)"
             echo "--- Release 资产 ---"
             cat /tmp/repair-assets.txt 2>/dev/null || echo "(没有清单)"
           } > /tmp/rep/info.txt
