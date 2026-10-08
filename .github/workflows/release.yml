@@ -7,29 +7,18 @@ name: Release
 # 手动触发只上传 artifact，不发布 Release（发布只在打 tag 时发生）
 
 on:
+  # 只在打标签时构建。原先还监听 branches: [main]，但那会带来两个问题：
+  #   ① 每推一次 main 就跑一轮完整 Linux 构建（6 个目标，约 1 小时）
+  #   ② 下一次 main 推送会把上一轮**取消**（实测 run 60/61 都是 cancelled），纯属白跑
+  # 需要临时验证时用下面的 workflow_dispatch（可指定 mode=full 连 Windows 一起编）。
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
-      version:
-        description: "版本号（不含 v），例如 1.0.0"
-        required: true
-        default: "1.0.0"
       mode:
-        description: "构建范围"
-        required: true
-        default: "fast"
-        type: choice
-        options:
-          - fast
-          - full
-
-# 同一分支/标签只保留最新一轮：我连续 push 修 bug 时不会堆叠多轮全矩阵
-# （tag 的运行不取消，那是正式发布）
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+        description: "构建范围（full = 含 Windows exe）"
+        required: false
+        default: "full"
 
 permissions:
   contents: write
