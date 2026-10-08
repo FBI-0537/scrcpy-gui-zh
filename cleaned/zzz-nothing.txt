@@ -1,0 +1,11 @@
+target=zzz-nothing
+run=2
+job_status=success
+--- 剩余 Release ---
+v1.0.0	13 个资产
+v1.0.1	14 个资产
+--- 剩余标签 ---
+cleanup-v1.0.0
+cleanup-zzz-nothing
+v1.0.1
+v1.0.2
