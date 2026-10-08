@@ -1,0 +1,4 @@
+label=glibc2.36-aarch64-full
+status=success
+run=42
+ref=main
