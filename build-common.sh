@@ -168,6 +168,15 @@ pkg_name_for_key() {
         # 缺了会直接报 "On Linux, objdump is required"
         binutils)  printf 'binutils\n' ;;
         tar)       printf 'tar\n' ;;
+        xz-utils)
+            # tar.xz 产物需要它（tar -J）；最小镜像里常常没有
+            case "$DISTRO_FAMILY" in
+                debian) printf 'xz-utils\n' ;;
+                rhel)   printf 'xz\n' ;;
+                arch)   printf 'xz\n' ;;
+                suse)   printf 'xz\n' ;;
+                alpine) printf 'xz\n' ;;
+            esac ;;
         findutils) printf 'findutils\n' ;;
         # ------------------------------------------------------------------
         # 编译 scrcpy 需要的开发库

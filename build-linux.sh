@@ -294,12 +294,12 @@ build_scrcpy_from_source() {
         sdlver="${sdlver#release-}"
         [ -n "$sdlver" ] || die "无法确定 SDL3 版本，请检查网络 / 系统代理"
         info "SDL3 版本：$sdlver"
-        sdlurl="https://github.com/libsdl-org/SDL/releases/download/release-$sdlver/SDL3-$sdlver.tar.xz"
-        curl -fL --retry 2 --max-time 900 -o "$VENDOR_DIR/sdl3.tar.xz" "$sdlurl" \
+        sdlurl="https://github.com/libsdl-org/SDL/releases/download/release-$sdlver/SDL3-$sdlver.tar.gz"
+        curl -fL --retry 2 --max-time 900 -o "$VENDOR_DIR/sdl3.tar.gz" "$sdlurl" \
             || die "SDL3 下载失败：$sdlurl"
         rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build"
         mkdir -p "$VENDOR_DIR/sdl3-src"
-        tar -xJf "$VENDOR_DIR/sdl3.tar.xz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
+        tar -xf "$VENDOR_DIR/sdl3.tar.gz"       # -xf 让 tar 自己识别（gz/xz 都行） -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
             || die "SDL3 解压失败"
         # 第一次按完整依赖配置；失败时打印错误摘要，再用最小依赖重试一次
         # （关掉 XTEST / ALSA 这些可选后端），避免因为一个可选依赖整轮白跑。
@@ -342,7 +342,7 @@ build_scrcpy_from_source() {
             warn "（scrcpy ≤ 3.0.1 基于 SDL2，版本循环会自动退到能编出来的那一版）"
             rm -rf "$VENDOR_SDL3" "$VENDOR_DIR/sdl3-build"
         fi
-        rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.xz"
+        rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build" "$VENDOR_DIR/sdl3.tar.gz"
         info "SDL3 已装到 $VENDOR_SDL3"
     fi
 
@@ -397,21 +397,21 @@ build_scrcpy_from_source() {
     GOT_SERVER=""
     for ver in $CANDS; do
         info "试 scrcpy v$ver …"
-        tarball="$VENDOR_DIR/scrcpy-$ver.tar.xz"
+        tarball="$VENDOR_DIR/scrcpy-$ver.tar.gz"
         src="$VENDOR_DIR/scrcpy-src"
         cand_server="$VENDOR_DIR/scrcpy-server-$ver"
         rm -rf "$src" "$tarball" "$cand_server" "$VENDOR_DIR/meson-setup.log"
 
         # 源码只能从 archive/refs/tags 拿 —— GitHub release 的资产里
-        # 没有源码包（只有 scrcpy-server-vX.Y、scrcpy-linux-x86_64-vX.Y.tar.xz 等）
+        # 没有源码包（只有 scrcpy-server-vX.Y、scrcpy-linux-x86_64-vX.Y.tar.gz 等）
         if ! curl -fL --retry 2 --max-time 600 -o "$tarball" \
-                "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.xz" \
+                "https://github.com/Genymobile/scrcpy/archive/refs/tags/v$ver.tar.gz" \
                 2>"$VENDOR_DIR/curl-err.log"; then
             warn "  · v$ver 源码下载失败：$(tail -1 "$VENDOR_DIR/curl-err.log" 2>/dev/null)"
             continue
         fi
         mkdir -p "$src"
-        if ! tar -xJf "$tarball" -C "$src" --strip-components=1 2>/dev/null; then
+        if ! tar -xf "$tarball" -C "$src" --strip-components=1 2>/dev/null; then
             warn "  · v$ver 解压失败，试下一个"
             rm -rf "$src" "$tarball"
             continue
@@ -620,8 +620,8 @@ collect_missing() {
     # 统计依赖库时报 command not found、退出码 127。
     need_cmd find     findutils "统计依赖库数量（find）"
     need_cmd xargs    findutils "批量处理文件列表"
-    need_cmd tar      tar       "生成 tar.gz 发布包"
-    need_cmd gzip     gzip      "tar.gz 压缩"
+    need_cmd tar      tar       "生成 tar.xz 发布包"
+    need_cmd gzip     gzip      "压缩（备用）"
     need_cmd xz       xz-utils  "tar.xz 压缩（产物用这个，省 30-40%）"
     need_cmd awk      gawk      "文本处理"
     need_cmd sed      sed       "文本处理"
@@ -1200,7 +1200,7 @@ if [ "$ONEDIR" -eq 1 ]; then
 
     if ! tar -cJf "$DIST_DIR/$ARTIFACT_NAME.tar.xz" \
             -C "$DIST_DIR" "$ARTIFACT_NAME" 2>/dev/null; then
-        die "打包成 tar.gz 失败：$DIST_DIR/$ARTIFACT_NAME.tar.xz"
+        die "打包成 tar.xz 失败：$DIST_DIR/$ARTIFACT_NAME.tar.xz"
     fi
     info "已打包：$DIST_DIR/$ARTIFACT_NAME.tar.xz（$(du -h "$DIST_DIR/$ARTIFACT_NAME.tar.xz" | cut -f1)）"
 else
