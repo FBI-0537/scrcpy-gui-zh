@@ -1028,6 +1028,18 @@ elif [ "$AUTO_ADB" -eq 1 ]; then
         warn "Google 官方 platform-tools 只提供 x86_64 版，$ARCH_TAG 上没有官方包"
     fi
     if [ "$GOT_ADB" -eq 0 ]; then
+        # 先用 apt 从 backports 装（依赖齐、能跑）—— 手工抠二进制会缺库
+        if upgrade_adb_dev; then
+            ADB_BIN="$(find_first "$(command -v adb 2>/dev/null || true)" \
+                /usr/local/bin/adb /usr/bin/adb)" || ADB_BIN=""
+            if [ -n "$ADB_BIN" ] && adb_mdns_supported "$ADB_BIN"; then
+                ADB_MDNS=1
+                GOT_ADB=1
+                info "  · 系统 adb 已可用：$(adb_version_text "$ADB_BIN")"
+            fi
+        fi
+    fi
+    if [ "$GOT_ADB" -eq 0 ]; then
         info "改为从 Debian/Ubuntu 归档取本架构（$ARCH_TAG）的 adb…"
         if download_prebuilt_adb "$VENDOR_PT"; then
             if adb_mdns_supported "$VENDOR_PT/adb"; then
@@ -1157,6 +1169,24 @@ if [ "$ONEDIR" -eq 1 ]; then
     fi
     [ -x "$OUT" ] || die "没有生成 $OUT"
     info "已生成目录：$DIST_DIR/$ARTIFACT_NAME"
+    # ---- 减小体积：PyInstaller 不会 strip，符号表占不少空间 ----
+    if command -v strip >/dev/null 2>&1; then
+        _before="$(du -sm "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
+        find "$DIST_DIR/$ARTIFACT_NAME" -type f \( -name '*.so' -o -name '*.so.*' \) -print0 2>/dev/null \
+            | xargs -0 -r strip --strip-unneeded 2>/dev/null || true
+        for _e in "$DIST_DIR/$ARTIFACT_NAME/$ARTIFACT_NAME" \
+                  "$DIST_DIR/$ARTIFACT_NAME/_internal/scrcpy" \
+                  "$DIST_DIR/$ARTIFACT_NAME/_internal/adb"; do
+            if [ -f "$_e" ]; then
+                strip --strip-unneeded "$_e" 2>/dev/null || true
+            fi
+        done
+        _after="$(du -sm "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
+        info "已剥离符号表：${_before:-?}MB → ${_after:-?}MB"
+    else
+        warn "没有 strip 命令，跳过符号剥离（体积会大一些）"
+    fi
+
     if ! tar -czf "$DIST_DIR/$ARTIFACT_NAME.tar.gz" \
             -C "$DIST_DIR" "$ARTIFACT_NAME" 2>/dev/null; then
         die "打包成 tar.gz 失败：$DIST_DIR/$ARTIFACT_NAME.tar.gz"

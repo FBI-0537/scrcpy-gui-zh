@@ -1060,6 +1060,41 @@ platform_tools_available_for_arch() {
 #   · adb 34.0.5-12~bpo12+1 是 bookworm backports，glibc 2.36 即可（含 arm64/armhf）
 #   · adb 29.0.6 太旧，没有 adb pair
 # 只取最新版会直接失败，取最旧版又拿不到无线配对能力。
+# 用发行版自己的仓库拿到更新的 adb（apt 会自动把依赖库装齐）。
+# 为什么需要：手工从 .deb 抠 adb 二进制是**跑不起来**的 —— adb 34 依赖
+# android-libbase / android-libboringssl / android-libcutils / libprotobuf /
+# liblz4 等，容器里没有。实测 aarch64 上 34/35 全部"在本机跑不起来"，最后
+# 退回 adb 29，无线配对（二维码/配对码）就没了。
+upgrade_adb_dev() {
+    local cur codename newbin
+    cur="$(command -v adb 2>/dev/null || true)"
+    if [ -n "$cur" ] && adb_mdns_supported "$cur"; then
+        return 0
+    fi
+    case "$DISTRO_FAMILY" in
+        debian)
+            codename="$(sed -n 's/^VERSION_CODENAME=\(.*\)/\1/p' /etc/os-release 2>/dev/null | head -1)"
+            [ -n "$codename" ] || codename="$(sed -n 's/^VERSION_CODENAME=\(.*\)/\1/p' /usr/lib/os-release 2>/dev/null | head -1)"
+            [ -n "$codename" ] || return 1
+            info "  · 试着从 ${codename}-backports 装更新的 adb（apt 会带上依赖库）…"
+            mkdir -p /etc/apt/sources.list.d 2>/dev/null || true
+            printf 'deb http://deb.debian.org/debian %s-backports main\n' "$codename" \
+                > "/etc/apt/sources.list.d/${codename}-backports.list" 2>/dev/null || true
+            apt-get update -qq 2>&1 | sed -n '1,3p' || true
+            if apt-get install -y -t "${codename}-backports" adb 2>&1 | sed -n '1,6p'; then
+                newbin="$(command -v adb 2>/dev/null || true)"
+                if [ -n "$newbin" ] && adb_mdns_supported "$newbin"; then
+                    info "  · 成功：系统 adb 现在是 $(adb_version_text "$newbin")（支持无线配对）"
+                    return 0
+                fi
+            fi
+            info "  · backports 里没拿到能用的新版 adb，继续用原来的办法"
+            ;;
+    esac
+    return 1
+}
+
+
 download_prebuilt_adb() {
     local dest="$1"
     local arch base index all v url tmp deb out
@@ -1105,6 +1140,10 @@ download_prebuilt_adb() {
             warn "  · adb $v 下载失败，试下一个"
             continue
         fi
+        # 注意：这里只是解包。adb 还需要一堆运行库（android-lib* / libprotobuf /
+        # liblz4），所以解出来的二进制**很可能跑不起来** —— 下面会实测，
+        # 跑不起来就换下一个版本。真正能用的路径是上面的 upgrade_adb_dev()
+        # （用 apt 装，依赖齐）。
         if command -v dpkg-deb >/dev/null 2>&1; then
             if ! dpkg-deb -x "$deb" "$tmp/root" >/dev/null 2>&1; then
                 warn "  · adb $v 解包失败"
