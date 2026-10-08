@@ -1,0 +1,27 @@
+target=v1.0.0
+run=5
+job_status=success
+source_run=37732272871
+--- 查找步骤的输出 ---
+GITHUB_REPOSITORY=FBI-0537/scrcpy-gui-zh
+GH_HOST=（空） GH_REPO=FBI-0537/scrcpy-gui-zh
+gh 版本：gh version 2.101.0 (2026-09-15)
+
+--- 方式一：gh run list --workflow=release.yml ---
+37732272871
+最终采用的 run_id：37732272871
+--- Release 资产 ---
+scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz	20835020
+scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.txt	3386
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz	59706056
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.txt	4579
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz	58259180
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.txt	4568
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz	23034412
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.txt	3434
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz	78327244
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt	3476
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz	75657444
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.txt	3465
+scrcpy-gui-zh-1.0.0-windows-x86_64.exe	25392967
+SHA256SUMS.txt	1628
