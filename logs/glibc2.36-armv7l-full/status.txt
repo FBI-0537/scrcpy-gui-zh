@@ -1,0 +1,4 @@
+label=glibc2.36-armv7l-full
+status=cancelled
+run=64
+ref=v1.0.0
