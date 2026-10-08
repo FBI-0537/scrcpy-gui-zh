@@ -102,7 +102,9 @@ jobs:
             cp "$f" assets/
             n=$((n + 1))
           done < <(find dl -type f \( -name '*.tar.xz' -o -name '*.tar.gz' \
-                    -o -name '*.txt' -o -name '*.exe' \) ! -name 'SHA256SUMS.txt' | sort)
+                    -o -name '*.txt' -o -name '*.exe' \) \
+                    ! -name 'SHA256SUMS.txt' ! -name 'top_level.txt' \
+                    ! -name 'entry_points.txt' ! -name 'requires.txt' | sort)
           echo "挑出 $n 个文件："
           ls -lh assets
           cd assets
@@ -130,6 +132,13 @@ jobs:
             [ -f "$f" ] || continue
             echo "--- 上传 $(basename "$f")"
             gh release upload "$t" "$f" --clobber
+          done
+          # 清掉可能残留的垃圾资产（例如早先版本混进来的 top_level.txt）
+          for junk in top_level.txt entry_points.txt requires.txt; do
+            if gh release view "$t" --json assets --jq '.assets[].name' 2>/dev/null | grep -qxF "$junk"; then
+              echo "--- 删除垃圾资产：$junk"
+              gh release delete-asset "$t" "$junk" --yes 2>&1 || echo "    （删除失败）"
+            fi
           done
           echo
           echo "=== Release 上实际的资产 ==="
