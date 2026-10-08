@@ -629,8 +629,22 @@ HOTSPOT_PREFIXES = (
 )
 
 
+_HOTSPOT_HINT_CACHE = None
+
+
 def hotspot_subnet_hint():
-    """如果有网卡落在已知热点网段，返回一句提示；否则返回空串。"""
+    """如果有网卡落在已知热点网段，返回一句提示；否则返回空串。
+
+    结果缓存：内部会做 socket 解析，不该在每次点击时重复做（会拖慢界面）。
+    """
+    global _HOTSPOT_HINT_CACHE
+    if _HOTSPOT_HINT_CACHE is not None:
+        return _HOTSPOT_HINT_CACHE
+    _HOTSPOT_HINT_CACHE = _hotspot_subnet_hint_uncached()
+    return _HOTSPOT_HINT_CACHE
+
+
+def _hotspot_subnet_hint_uncached():
     for ip in local_ipv4_list():
         for pre in HOTSPOT_PREFIXES:
             if pre.endswith(".") and ip.startswith(pre):
@@ -1286,6 +1300,10 @@ class ScrcpyGui:
         self.root = root
         self.proc = None
         self.log_queue = queue.Queue()
+        # 后台线程 → 主线程 的调用队列。
+        # Tk 不是线程安全的：后台线程**绝对不能**直接调 root.after() 或改控件，
+        # 否则界面会卡住（用户实测：扫码配对成功那一刻卡一小会儿）。
+        self._ui_queue = queue.Queue()
         self.hidden_serials = set()   # 被「删除设备」在列表里隐藏的 serial
         self._mirroring = False
         # GL 驱动缺失时，自动用软件渲染重试一次（只重试一次，避免死循环）
@@ -1304,6 +1322,7 @@ class ScrcpyGui:
         self._build_ui()
 
         self.root.after(120, self._drain_log)
+        self.root.after(80, self._drain_ui)
         self.root.after(200, self._check_env_and_refresh)
         self.root.after(4000, self._auto_refresh)
 
@@ -1770,6 +1789,37 @@ class ScrcpyGui:
     def log(self, message):
         self.log_queue.put(message)
 
+    # ---------- 后台线程 → 主线程 的安全通道 ----------
+
+    def ui_call(self, fn, *args):
+        """线程安全地把一个调用排给主线程执行。
+
+        后台线程里**必须**用这个，而不是 self.root.after(...)：
+        Tk 不是线程安全的，跨线程调 after 会让界面卡住（实测过）。
+        """
+        try:
+            self._ui_queue.put((fn, args))
+        except Exception:
+            pass
+
+    def _drain_ui(self):
+        """主线程轮询：取出后台线程排进来的调用并执行。"""
+        while True:
+            try:
+                fn, args = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                break
+            try:
+                fn(*args)
+            except Exception as exc:      # 单个回调出错不能影响轮询
+                try:
+                    self.log("（界面回调出错：%s）" % exc)
+                except Exception:
+                    pass
+        self.root.after(80, self._drain_ui)
+
     def _drain_log(self):
         try:
             while True:
@@ -1940,7 +1990,7 @@ class ScrcpyGui:
                 err = str(exc)
             cost = time.time() - t0
             try:
-                self.root.after(0, lambda: self._apply_devices(rows, hidden_now, cost, err))
+                self.ui_call(self._apply_devices, rows, hidden_now, cost, err)
             except Exception:  # noqa: BLE001
                 self._refresh_running = False
 
@@ -2592,7 +2642,7 @@ class ScrcpyGui:
                     self.notebook.select(self.tab_wifi)
                 except Exception:
                     pass
-            self.root.after(0, _switch)
+            self.ui_call(_switch)
             return
 
         self.log("发现配对服务：%s" % pair_addr)
@@ -2610,7 +2660,7 @@ class ScrcpyGui:
             self.log("本方式未成功（密码原文：%s）" % pw)
         if not paired:
             self.log("！ 配对失败。请重新生成二维码再扫一次。")
-            self.root.after(0, lambda: self.lbl_qr.configure(text="配对失败，请重试"))
+            self.ui_call(self.lbl_qr.configure, text="配对失败，请重试")
             return
 
         self.log("配对成功！正在查找连接地址…")
@@ -2629,10 +2679,10 @@ class ScrcpyGui:
         if conn:
             ip, _, port = conn.rpartition(":")
             self.log("连接地址：%s" % conn)
-            self.root.after(0, lambda: self._after_qr_connect(ip, port))
+            self.ui_call(self._after_qr_connect, ip, port)
         else:
             self.log("已配对成功，但没找到连接地址。请在手机无线调试主页查看端口，填到上方后点「连接」。")
-            self.root.after(0, lambda: self.lbl_qr.configure(text="配对成功，请手动连接"))
+            self.ui_call(self.lbl_qr.configure, text="配对成功，请手动连接")
 
     def _after_qr_connect(self, ip, port):
         self.var_ip.set(ip)
@@ -2661,7 +2711,7 @@ class ScrcpyGui:
                 res = (1, "后台操作异常：%s" % exc)
             if done is not None:
                 try:
-                    self.root.after(0, lambda: done(res))
+                    self.ui_call(done, res)
                 except Exception:
                     pass
         threading.Thread(target=_worker, daemon=True).start()
@@ -2949,21 +2999,21 @@ class ScrcpyGui:
         self.log(out.strip() or "(无输出)")
         if rc == 0:
             self.log("USB 权限规则已写入。")
-            self.root.after(0, lambda: messagebox.showinfo(
+            self.ui_call(messagebox.showinfo,
                 APP_TITLE,
                 "USB 权限已安装。\n\n请做两件事：\n"
                 "1) 拔掉数据线，再重新插上\n"
                 "2) 注销并重新登录系统\n\n"
-                "然后点「刷新设备」。"))
+                "然后点「刷新设备」。")
         else:
             self.log("！ 安装失败（返回码 %s）。也可以在终端手动执行：sudo %s" % (rc, script))
             if "symbol lookup error" in out or "undefined symbol" in out:
                 self.log("   原因：系统命令被产物的动态库路径污染（已在新版本里修好）。")
                 self.log("   现在请手动执行上面那条 sudo 命令即可。")
-            self.root.after(0, lambda: messagebox.showwarning(
+            self.ui_call(messagebox.showwarning,
                 APP_TITLE,
                 "自动安装未完成（可能取消了密码框）。\n\n"
-                "也可以手动执行：\nsudo %s" % script))
+                "也可以手动执行：\nsudo %s" % script)
 
     def on_close(self):
         try:
