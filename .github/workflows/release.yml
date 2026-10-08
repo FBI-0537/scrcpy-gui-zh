@@ -357,16 +357,26 @@ jobs:
           merge-multiple: true
 
       - name: 生成校验和
+        shell: bash
         run: |
-          cd assets
-          # 只对文件算校验和：产物里有一个目录版解压出来的目录，
-          # 直接 sha256sum * 会报 "Is a directory" 并让这一步失败。
-          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%P\n' \
-            | sort | xargs -r sha256sum > SHA256SUMS.txt
-          echo "--- assets ---"
+          set -e
+          cd assets || { echo "没有 assets 目录"; exit 1; }
+          echo "=== assets 里的文件 ==="
           ls -lh
-          echo "--- SHA256SUMS.txt ---"
+          # 只对文件算校验和（产物里有一个解压出来的目录，sha256sum * 会报
+          # "Is a directory" 并让这一步失败）。
+          # 不用 find -printf / xargs：换成纯 shell 循环，最稳、出错也看得见。
+          : > SHA256SUMS.txt
+          for f in *.tar.xz *.tar.gz *.txt *.exe; do
+            [ -f "$f" ] || continue
+            [ "$f" = "SHA256SUMS.txt" ] && continue
+            sha256sum "$f" >> SHA256SUMS.txt
+          done
+          echo "=== SHA256SUMS.txt ==="
           cat SHA256SUMS.txt
+          echo "=== 校验和条目数：$(grep -c . SHA256SUMS.txt || echo 0) ==="
+          # 一个条目都没有就明确失败（避免"静默生成空文件"）
+          grep -q . SHA256SUMS.txt || { echo "校验和为空，失败"; exit 1; }
 
       # 先创建 Release（带正文）。附件下面用 gh 逐个显式上传 ——
       # action-gh-release 的 files 是 glob，配 fail_on_unmatched_files: false
