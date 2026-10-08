@@ -44,6 +44,8 @@ jobs:
           echo
 
           if [ "$target" = "cancel-stale" ]; then
+            mkdir -p /tmp/cl
+            exec > >(tee /tmp/cl/delete.log) 2>&1
             echo "=== 取消过期/被取代的运行 ==="
             # 找出标签 v1.0.0 当前指向的提交（注解标签要再解一层）
             keep_sha="$(gh api "repos/${{ github.repository }}/git/ref/tags/v1.0.0" \
