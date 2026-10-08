@@ -1181,47 +1181,41 @@ if [ "$ONEDIR" -eq 1 ]; then
     info "  目录里最大的 20 个项目："
     du -ah "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | sort -rh | sed -n '1,20p' | sed 's/^/      /' || true
     info "  合计：$(du -sh "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
-    # ---- 数据驱动裁剪：删掉没有任何东西引用的动态库 ----
-    # 依据：构建日志里的体积报告（libavfilter / BLT / 多余的 SDL 等）
-    # 原则：先用 ldd 算出"真正被引用的集合"，只删不在集合里的，绝不拍脑袋。
+    # ---- 注意：这里**不再**做"删除未被引用的库"的自动裁剪 ----
+    # 曾经做过一次（用 ldd 判断谁引用了谁），结果删掉了 libcrypto.so.1.1：
+    #   · 判断时只扫了 _internal/*.cpython-*.so（顶层），而 Python 扩展模块在
+    #     _internal/python3.x/lib-dynload/ 子目录里 → libcrypto/libssl 被误删
+    #   · 构建机的 --selftest 通过，是因为构建容器自带 libcrypto.so.1.1，
+    #     系统库掩盖了问题；用户在 Ubuntu 22 上直接 ImportError 起不来
+    # 结论：省那 3MB 完全不值得冒"用户装不上"的风险。真要减体积，
+    # 就用**裁剪前**的体积报告去改构建参数（比如不装用不到的后端），
+    # 而不是事后删文件。
     if command -v ldd >/dev/null 2>&1; then
         _root="$DIST_DIR/$ARTIFACT_NAME"
         _int="$_root/_internal"
         if [ -d "$_int" ]; then
-            _keep="$(mktemp 2>/dev/null || echo /tmp/keep.$$)"
-            : > "$_keep"
-            # 1) 收集"根"：主程序、scrcpy、adb、所有 Python 扩展模块、Tcl/Tk
-            _roots=""
-            for _f in "$_root/$ARTIFACT_NAME" "$_int/scrcpy" "$_int/adb"; do
-                [ -f "$_f" ] && _roots="$_roots $_f"
-            done
-            for _f in "$_int"/*.cpython-*.so "$_int"/libtcl*.so* "$_int"/libtk*.so*; do
-                [ -f "$_f" ] && _roots="$_roots $_f"
-            done
-            # 2) 对每个根跑 ldd（LD_LIBRARY_PATH 指向捆绑目录）并取并集
-            for _f in $_roots; do
-                LD_LIBRARY_PATH="$_int${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-                    ldd "$_f" 2>/dev/null \
-                    | sed -n 's/.*=> \([^ ]*\).*/\1/p;s/^[[:space:]]*\(\/[^ ]*\).*/\1/p'
-            done | sort -u > "$_keep"
-            info "  被引用的库：$(grep -c . "$_keep" 2>/dev/null || echo 0) 个"
-            # 3) 删除不在保留集里的 .so（有保险名单）
-            _freed=0
-            for _lib in "$_int"/*.so*; do
-                [ -f "$_lib" ] || continue
-                _base="$(basename "$_lib")"
-                case "$_base" in
-                    libpython*|libtcl*|libtk*|libBLT*) continue ;;
-                esac
-                grep -qxF "$_lib" "$_keep" 2>/dev/null && continue
-                grep -qF "/$_base" "$_keep" 2>/dev/null && continue
-                _sz="$(du -k "$_lib" 2>/dev/null | cut -f1)"
-                info "      · 裁剪未被引用的库：$_base（${_sz:-?}K）"
-                rm -f "$_lib" || true
-                _freed=$((_freed + ${_sz:-0}))
-            done
-            info "  裁剪合计释放：约 $((_freed / 1024))MB"
-            rm -f "$_keep" 2>/dev/null || true
+            _miss="$(mktemp 2>/dev/null || echo /tmp/miss.$$)"
+            : > "$_miss"
+            # 系统/加载器白名单：这些本来就应该由用户系统提供
+            _sysre='^/(lib|usr/lib|lib64|usr/lib64)/(ld-linux|libc\.|libm\.|libdl\.|libpthread\.|librt\.|libgcc_s\.|libresolv\.|libutil\.|libnsl\.)'
+            find "$_root" -type f \( -name '*.so' -o -name '*.so.*' -o -name "$ARTIFACT_NAME" \) 2>/dev/null \
+            | while IFS= read -r _elf; do
+                LD_LIBRARY_PATH="$_int:$_int/python3.11:$_int/python3.8:$_int/python3.9:$_int/python3.10:$_int/python3.12${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+                    ldd "$_elf" 2>/dev/null
+            done | sed -n 's/^[[:space:]]*\([^ ]*\) => not found.*/NOTFOUND \1/p' | sort -u >> "$_miss"
+            # 也检查"解析到了包外路径"的依赖（可能依赖构建机的库）
+            _outside="$(find "$_root" -type f -name '*.so*' 2>/dev/null | while IFS= read -r _elf; do
+                LD_LIBRARY_PATH="$_int${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$_elf" 2>/dev/null
+            done | sed -n 's/.*=> \(\/[^ ]*\).*/\1/p' | sort -u | grep -v "^$_int/" || true)"
+            if [ -s "$_miss" ]; then
+                warn "以下依赖在包里找不到（用户机器上可能起不来）："
+                sed 's/^/      /' "$_miss"
+            fi
+            if [ -n "$_outside" ]; then
+                info "  解析到包外的依赖（请确认这些是系统基础库）："
+                printf '%s\n' "$_outside" | sed 's/^/      /'
+            fi
+            rm -f "$_miss" 2>/dev/null || true
         fi
     fi
 
@@ -1270,6 +1264,15 @@ step "5/6 自检（实际运行产物，确认内嵌的 scrcpy / adb / server �
 
 if "$OUT" --selftest; then
     info "自检通过"
+    info "  注意：自检在**构建容器**里跑，容器自带的系统库可能掩盖缺失的依赖。"
+    info "  所以上面的「依赖覆盖检查」结果同样要看 —— 那才是用户视角。"
+    # 额外做一次"导入关键模块"的烟测：这些模块会加载 libcrypto / libssl 一类
+    # 由发行版提供的库，最能暴露"包里缺库"的问题。
+    if "$OUT" --cli --help >/dev/null 2>&1; then
+        info "  命令行烟测通过（关键模块导入正常）"
+    else
+        warn "  命令行烟测失败：可能是包里缺库，请检查上面的依赖覆盖检查结果"
+    fi
 else
     die "自检失败：产物内嵌的组件有问题，不交付。
      请把上面的输出发出来（常见原因是依赖库没收集全）。"
