@@ -23,6 +23,8 @@ jobs:
   cleanup:
     name: 删除 Release 与标签
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: 删除
         env:
@@ -48,7 +50,9 @@ jobs:
           echo
 
           echo "=== 剩余 Release 列表 ==="
-          gh release list 2>&1 || true
+          gh api "repos/${{ github.repository }}/releases" \
+            --jq '.[] | "\(.tag_name)\t\(.assets | length) 个资产"' 2>&1 \
+            || echo "（列 Release 失败）"
           echo
           echo "=== 剩余标签列表 ==="
           git ls-remote --tags "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" 2>/dev/null \
@@ -71,7 +75,9 @@ jobs:
             echo "run=${{ github.run_number }}"
             echo "job_status=${{ job.status }}"
             echo "--- 剩余 Release ---"
-            gh release list 2>/dev/null || echo "(查询失败)"
+            gh api "repos/${{ github.repository }}/releases" \
+              --jq '.[] | "\(.tag_name)\t\(.assets | length) 个资产"' 2>&1 \
+              || echo "(查询失败)"
             echo "--- 剩余标签 ---"
             git ls-remote --tags "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" 2>/dev/null \
               | sed 's|.*refs/tags/||' | grep -v '\^{}' | sort -u || echo "(查询失败)"
@@ -89,5 +95,3 @@ jobs:
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "清理标记：$target（run ${{ github.run_number }}）" || true
           git push -f origin "HEAD:cleaned-$target"
-        env:
-          GH_TOKEN: ${{ github.token }}
