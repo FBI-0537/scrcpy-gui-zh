@@ -1,0 +1,125 @@
+name: Repair Release
+
+# 把最近一次成功构建的产物补传到 Release。
+#   git push origin repair-v1.0.0
+# 用途：Release 被误删 / publish 失败时，不必重跑整条 1 小时的流水线。
+
+on:
+  push:
+    tags: ["repair-*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "要补传的标签（例如 v1.0.0）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    name: 补传产物到 Release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: 确定目标标签
+        id: t
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            t="${GITHUB_REF_NAME#repair-}"
+          else
+            t="${{ github.event.inputs.target }}"
+          fi
+          echo "target=$t" >> "$GITHUB_OUTPUT"
+          echo "目标标签：$t"
+
+      - name: 找最近一次成功的 Release 运行
+        id: find
+        run: |
+          rid="$(gh run list --workflow=release.yml --status=success --limit 1 \
+            --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+          echo "run_id=$rid" >> "$GITHUB_OUTPUT"
+          echo "找到的 run_id：${rid:-（没找到）}"
+          [ -n "$rid" ] || { echo "没有成功的构建可补传"; exit 1; }
+
+      - name: 下载那次运行的全部 artifact
+        run: |
+          rm -rf dl assets
+          mkdir -p dl assets
+          gh run download "${{ steps.find.outputs.run_id }}" -D dl
+          echo "=== 下载到的内容（前 30 项）==="
+          find dl -maxdepth 3 | sed -n '1,30p'
+
+      - name: 只挑文件，重建校验和
+        run: |
+          set -e
+          n=0
+          while IFS= read -r f; do
+            cp "$f" assets/
+            n=$((n + 1))
+          done < <(find dl -type f \( -name '*.tar.xz' -o -name '*.tar.gz' \
+                    -o -name '*.txt' -o -name '*.exe' \) ! -name 'SHA256SUMS.txt' | sort)
+          echo "挑出 $n 个文件："
+          ls -lh assets
+          cd assets
+          : > SHA256SUMS.txt
+          for f in *.tar.xz *.tar.gz *.txt *.exe; do
+            [ -f "$f" ] || continue
+            sha256sum "$f" >> SHA256SUMS.txt
+          done
+          echo "=== SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+          [ -s SHA256SUMS.txt ] || { echo "校验和为空，失败"; exit 1; }
+
+      - name: 创建或更新 Release 并上传
+        run: |
+          set -e
+          t="${{ steps.t.outputs.target }}"
+          if gh release view "$t" >/dev/null 2>&1; then
+            echo "Release 已存在：$t"
+          else
+            echo "创建 Release：$t"
+            gh release create "$t" --title "$t" \
+              --notes "由补传工作流生成（原运行的发布步骤未完成）。产物与构建产物一致。"
+          fi
+          for f in assets/*; do
+            [ -f "$f" ] || continue
+            echo "--- 上传 $(basename "$f")"
+            gh release upload "$t" "$f" --clobber
+          done
+          echo
+          echo "=== Release 上实际的资产 ==="
+          gh release view "$t" --json assets \
+            --jq '.assets[] | "\(.name)\t\(.size)"' | tee /tmp/repair-assets.txt
+          echo "资产数：$(grep -c . /tmp/repair-assets.txt || echo 0)"
+
+      - name: 把结果写进标记分支
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          t="${{ steps.t.outputs.target }}"
+          mkdir -p /tmp/rep
+          {
+            echo "target=$t"
+            echo "run=${{ github.run_number }}"
+            echo "job_status=${{ job.status }}"
+            echo "source_run=${{ steps.find.outputs.run_id }}"
+            echo "--- Release 资产 ---"
+            cat /tmp/repair-assets.txt 2>/dev/null || echo "(没有清单)"
+          } > /tmp/rep/info.txt
+          cd /tmp
+          rm -rf rep-repo
+          git clone --depth 1 \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" rep-repo
+          cd rep-repo
+          mkdir -p repaired
+          cp /tmp/rep/info.txt "repaired/$t.txt"
+          git checkout --orphan "repaired-$t" 2>/dev/null || true
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -f repaired
+          git -c user.email=ci@users.noreply.github.com -c user.name=ci \
+            commit -m "补传标记：$t（run ${{ github.run_number }}）" || true
+          git push -f origin "HEAD:repaired-$t"
