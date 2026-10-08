@@ -1,0 +1,28 @@
+tag=v1.0.2
+run=44
+job_status=failure
+--- assets 目录内容 ---
+total 418M
+-rw-r--r-- 1 runner runner 1.6K Oct  8 01:53 SHA256SUMS.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.28-x86_64-full
+-rw-r--r-- 1 runner runner  26M Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.28-x86_64-full.tar.gz
+-rw-r--r-- 1 runner runner 3.2K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.28-x86_64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-aarch64-basic
+-rw-r--r-- 1 runner runner  76M Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-aarch64-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-aarch64-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-armv7l-basic
+-rw-r--r-- 1 runner runner  71M Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-armv7l-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-armv7l-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-x86_64-full
+-rw-r--r-- 1 runner runner  29M Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-x86_64-full.tar.gz
+-rw-r--r-- 1 runner runner 3.2K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.31-x86_64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.36-aarch64-basic
+-rw-r--r-- 1 runner runner 101M Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.36-aarch64-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.36-aarch64-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.36-armv7l-basic
+-rw-r--r-- 1 runner runner  93M Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.36-armv7l-basic.tar.gz
+-rw-r--r-- 1 runner runner 4.3K Oct  8 01:53 scrcpy-gui-zh-1.0.2-linux-glibc2.36-armv7l-basic.txt
+-rw-r--r-- 1 runner runner  25M Oct  8 01:53 scrcpy-gui-zh-1.0.2-windows-x86_64.exe
+
+--- Release 上的资产（发布结果核对）---
+(没有 /tmp/release-assets.txt —— 上传步骤可能没跑到)
