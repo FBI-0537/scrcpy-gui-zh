@@ -233,7 +233,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
           # 省额度：手动跑留 1 天，打 tag 正式发布留 30 天
-          retention-days: ${{ github.ref_type == 'tag' && 30 || 1 }}
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # Windows：单个 exe（内含 scrcpy / adb / 其依赖 DLL）
@@ -340,7 +340,7 @@ jobs:
           path: dist/*.exe
           if-no-files-found: error
           # 省额度：手动跑留 1 天，打 tag 正式发布留 30 天
-          retention-days: ${{ github.ref_type == 'tag' && 30 || 1 }}
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # 发布：把上面所有产物汇总成 GitHub Release 资产（仅打 tag 时）
@@ -368,16 +368,34 @@ jobs:
           echo "--- SHA256SUMS.txt ---"
           cat SHA256SUMS.txt
 
+      # 先创建 Release（带正文）。附件下面用 gh 逐个显式上传 ——
+      # action-gh-release 的 files 是 glob，配 fail_on_unmatched_files: false
+      # 时匹配不上也静默成功，日志里看不出哪个文件没传（实测 Windows 的 exe
+      # 就这样没出现在 Release 上）。
       - uses: softprops/action-gh-release@v2
         with:
-          # 只传文件：目录版解压出来的目录不能作为 Release 资产
-          files: |
-            assets/*.tar.gz
-            assets/*.txt
-            assets/*.exe
-            assets/SHA256SUMS.txt
           generate_release_notes: true
           fail_on_unmatched_files: false
+
+      - name: 逐个上传产物到 Release（显式，可核对）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd assets
+          echo "=== 待上传文件 ==="
+          ls -lh *.tar.gz *.txt *.exe 2>/dev/null || true
+          for f in *.tar.gz *.txt *.exe SHA256SUMS.txt; do
+            [ -f "$f" ] || continue
+            echo "--- 上传 $f"
+            gh release upload "${{ github.ref_name }}" "$f" --clobber
+          done
+          echo
+          echo "=== Release 上实际的资产（核对用）==="
+          gh release view "${{ github.ref_name }}" \
+            --json assets --jq '.assets[] | "\(.name)\t\(.size)"' | tee /tmp/release-assets.txt
+          echo
+          echo "资产总数：$(grep -c . /tmp/release-assets.txt || echo 0)"
           body: |
             ## 怎么选版本（先看这一节）
 
@@ -459,8 +477,15 @@ jobs:
             echo "tag=${{ github.ref_name }}"
             echo "run=${{ github.run_number }}"
             echo "job_status=${{ job.status }}"
-            echo "--- assets ---"
+            echo "--- assets 目录内容 ---"
             ls -lh "$GITHUB_WORKSPACE/assets" 2>/dev/null || echo "(没有 assets 目录)"
+            echo
+            echo "--- Release 上的资产（发布结果核对）---"
+            if [ -f /tmp/release-assets.txt ]; then
+              cat /tmp/release-assets.txt
+            else
+              echo "(没有 /tmp/release-assets.txt —— 上传步骤可能没跑到)"
+            fi
           } > /tmp/rel/info.txt
           cd /tmp
           rm -rf rel-repo
