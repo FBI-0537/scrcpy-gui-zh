@@ -589,6 +589,57 @@ def in_virtual_machine():
     return ""
 
 
+def local_ipv4_list():
+    """列出本机 IPv4（尽量不依赖第三方库）。"""
+    ips = []
+    try:
+        import socket
+        host = socket.gethostname()
+        for info in socket.getaddrinfo(host, None):
+            ip = info[4][0]
+            if ip and "." in ip and not ip.startswith("127."):
+                if ip not in ips:
+                    ips.append(ip)
+    except Exception:
+        pass
+    # 兜底：用一个 UDP「连接」探出默认出口地址（不会真的发包）
+    try:
+        import socket
+        sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sk.connect(("8.8.8.8", 80))
+            ip = sk.getsockname()[0]
+            if ip and ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+        finally:
+            sk.close()
+    except Exception:
+        pass
+    return ips
+
+
+# 「热点 / 网络共享」网段：这些网络下 mDNS 组播经常被系统或热点实现挡住，
+# 二维码配对会一直卡在「正在配对设备」—— 不是用户操作错，而是网络不给过。
+HOTSPOT_PREFIXES = (
+    "192.168.137.",   # Windows 移动热点 / 网络共享(ICS) 默认网段
+    "192.168.42.",    # 部分安卓 USB 网络共享
+    "192.168.43.",    # 安卓热点默认
+    "172.20.10.",     # iPhone 个人热点
+    "192.168.0.1",    # 占位，不会被用到
+)
+
+
+def hotspot_subnet_hint():
+    """如果有网卡落在已知热点网段，返回一句提示；否则返回空串。"""
+    for ip in local_ipv4_list():
+        for pre in HOTSPOT_PREFIXES:
+            if pre.endswith(".") and ip.startswith(pre):
+                return ("本机地址 %s 属于「%s」网段 —— 这是热点 / 网络共享的典型网段，"
+                        "这类网络**经常不转发 mDNS 组播**，二维码配对会一直卡住。"
+                        "请直接用「方式二：配对码」（它不依赖 mDNS）。" % (ip, pre.rstrip(".")))
+    return ""
+
+
 def mdns_troubleshooting_lines():
     """按「平台 + 是否虚拟机」给出 mDNS 发现失败的排查步骤。"""
     lines = []
@@ -1496,6 +1547,8 @@ class ScrcpyGui:
                                           command=self.qr_copy_payload, state="disabled")
             self.btn_qr_copy.pack(anchor="w")
             ttk.Button(right, text="mDNS 诊断", command=self.wifi_mdns_diag).pack(anchor="w", pady=(4, 0))
+            ttk.Button(right, text="启用备用 mDNS 后端",
+                       command=self.wifi_mdns_alt_backend).pack(anchor="w", pady=(4, 0))
             ttk.Button(right, text="网络探测（测组播）",
                        command=self.wifi_net_probe).pack(anchor="w", pady=(4, 0))
             ttk.Label(right, text="（卡在「正在配对设备」时先点「网络探测」）",
@@ -2405,6 +2458,32 @@ class ScrcpyGui:
                                             fill="black", outline="")
         return True
 
+    def wifi_mdns_alt_backend(self):
+        """按官方排查建议换 mDNS 后端：ADB_MDNS_OPENSCREEN=1 + 重启 adb 服务。
+
+        出处：Android platform-tools 的 mDNS 在部分 Windows 环境需要这个开关
+        （README 里的 ADB_MDNS_OPENSCREEN）。它对「二维码配对/自动发现找不到地址」
+        是最常被验证有效的开关。
+        """
+        if not self._need_adb():
+            return
+        self.log("按备用 mDNS 后端重启 adb 服务：ADB_MDNS_OPENSCREEN=1 adb kill-server")
+        env = child_env()
+        env["ADB_MDNS_OPENSCREEN"] = "1"
+        rc, out = run_system([ADB, "kill-server"], timeout=20)
+        self.log("$ adb kill-server → rc=%s %s" % (rc, (out or "").strip()))
+        # 用同一个环境再起一次服务，让新后端生效
+        try:
+            import subprocess as _sp
+            _sp.Popen([ADB, "start-server"], env=env,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        except Exception as exc:
+            self.log("！ 启动 adb 服务失败：%s" % exc)
+            return
+        self.log("已用 ADB_MDNS_OPENSCREEN=1 启动 adb 服务。")
+        self.log("请重新点「生成二维码并配对」再试一次；若仍不行，说明是网络组播被挡，")
+        self.log("请改用「方式二：配对码」或让手机与电脑连同一个普通路由器 Wi-Fi。")
+
     def qr_copy_payload(self):
         payload = getattr(self, "qr_payload", "")
         if not payload:
@@ -2448,25 +2527,37 @@ class ScrcpyGui:
             self.log("！ 缺少二维码库，请执行：pip install segno")
             self.log("！ 也可以点「复制二维码内容」后用其它工具生成二维码。")
 
-        self.log("请用手机：设置 → 开发者选项 → 无线调试 → 使用二维码配对设备 → 扫码")
-        self.log("正在等待手机扫码（最多 120 秒）…")
-        threading.Thread(target=self._qr_pair_worker, daemon=True).start()
+        # 每次生成二维码都递增尝试号：旧的等待线程发现过期就安静退出，
+        # 避免两次尝试的日志混在一起（用户实测日志里就是混的）。
+        self._qr_attempt = getattr(self, "_qr_attempt", 0) + 1
+        attempt = self._qr_attempt
 
-    def _qr_pair_worker(self):
+        self.log("请用手机：设置 → 开发者选项 → 无线调试 → 使用二维码配对设备 → 扫码")
+        hint = hotspot_subnet_hint()
+        if hint:
+            self.log("！ " + hint)
+        self.log("正在等待手机扫码（最多 120 秒）…")
+        threading.Thread(target=self._qr_pair_worker, args=(attempt,), daemon=True).start()
+
+    def _qr_pair_worker(self, attempt=0):
         service = self.qr_service
         password = self.qr_password
         deadline = time.time() + 120
+        tag = "[%s] " % service[-6:] if service else ""
 
         pair_addr = ""
         fallback = ""
         poll = 0
         while time.time() < deadline:
+            # 更晚的一次尝试已经开始 → 本次安静退出（不打扰用户）
+            if attempt and getattr(self, "_qr_attempt", 0) != attempt:
+                return
             poll += 1
             _rc, out = run([ADB, "mdns", "services"], timeout=15)
             # 前几次以及长时间无结果时，把原始输出打出来，方便定位
             if poll == 1 or (not pair_addr and poll % 6 == 0):
-                self.log("第 %d 次查询 adb mdns services：" % poll)
-                self.log(out.strip() or "(无输出)")
+                self.log(tag + "第 %d 次查询 adb mdns services：" % poll)
+                self.log(tag + (out.strip() or "(无输出)"))
             pairs = [e for e in parse_mdns_services(out) if e[0] == "pairing"]
             for _kind, name, addr in pairs:
                 if service in name:
@@ -2484,11 +2575,24 @@ class ScrcpyGui:
             self.log("未按服务名匹配到，改用唯一的配对服务地址：%s" % pair_addr)
 
         if not pair_addr:
-            self.log("！ 超时未发现配对服务（手机一直停在「正在配对设备」就是这个原因）。")
-            self.log("！ 请点「mDNS 诊断」按钮，或按下面顺序排查：")
+            self.log(tag + "！ 超时未发现配对服务（手机一直停在「正在配对设备」就是这个原因）。")
+            hint = hotspot_subnet_hint()
+            if hint:
+                self.log(tag + "！ " + hint)
+            self.log(tag + "！ 请点「mDNS 诊断」按钮，或按下面顺序排查：")
             for line in mdns_troubleshooting_lines():
-                self.log("！ " + line if line.strip() else "！")
-            self.root.after(0, lambda: self.lbl_qr.configure(text="配对超时，请点「mDNS 诊断」"))
+                self.log(tag + ("！ " + line if line.strip() else "！"))
+            # 自动切到「方式二：配对码」——它不依赖 mDNS，用户实测可用
+            self.log(tag + "→ 已自动切到「方式二：配对码」页：手机无线调试页里有 IP:端口 和配对码，"
+                           "填进来即可（不依赖 mDNS，通常最稳）。")
+
+            def _switch():
+                try:
+                    self.lbl_qr.configure(text="配对超时，已切到「方式二：配对码」")
+                    self.notebook.select(self.tab_wifi)
+                except Exception:
+                    pass
+            self.root.after(0, _switch)
             return
 
         self.log("发现配对服务：%s" % pair_addr)
