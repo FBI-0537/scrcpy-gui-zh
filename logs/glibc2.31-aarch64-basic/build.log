@@ -1,0 +1,85 @@
+
+[1m==> 1/6 检查环境与依赖（缺失或版本不对的，先装好再继续）[0m
+[32m[信息][0m 发行版  ：Ubuntu 20.04.6 LTS（Debian 系（apt/dpkg））
+[32m[信息][0m 目标架构：aarch64    libc：glibc 2.31
+[33m[注意][0m 检测到缺少以下依赖（发行版：Debian 系（apt/dpkg））：
+[33m[注意][0m   · 命令 python3 —— 运行与打包
+[33m[注意][0m   · python3 模块 tkinter —— 图形界面
+[33m[注意][0m   · python3 模块 venv —— 创建构建虚拟环境
+[33m[注意][0m   · 命令 objdump —— PyInstaller 解析 ELF 依赖（缺了报 objdump is required）
+[33m[注意][0m   · 命令 curl —— 下载依赖
+[33m[注意][0m   · 命令 file —— 校验产物
+[33m[注意][0m 将安装：binutils curl file python3 python3-tk python3-venv
+[32m[信息][0m 正在安装：binutils curl file python3 python3-tk python3-venv
+Reading package lists...
+Building dependency tree...
+Reading state information...
+E: Unable to locate package binutils
+[33m[注意][0m 直接安装失败，先刷新软件源再重试…
+Get:1 http://ports.ubuntu.com/ubuntu-ports focal InRelease [265 kB]
+Get:2 http://ports.ubuntu.com/ubuntu-ports focal-updates InRelease [128 kB]
+Get:3 http://ports.ubuntu.com/ubuntu-ports focal-backports InRelease [128 kB]
+Get:4 http://ports.ubuntu.com/ubuntu-ports focal-security InRelease [128 kB]
+Get:5 http://ports.ubuntu.com/ubuntu-ports focal/restricted arm64 Packages [1317 B]
+Get:6 http://ports.ubuntu.com/ubuntu-ports focal/universe arm64 Packages [11.1 MB]
+Get:7 http://ports.ubuntu.com/ubuntu-ports focal/main arm64 Packages [1234 kB]
+Get:8 http://ports.ubuntu.com/ubuntu-ports focal/multiverse arm64 Packages [139 kB]
+Get:9 http://ports.ubuntu.com/ubuntu-ports focal-updates/universe arm64 Packages [1494 kB]
+Get:10 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 Packages [3774 kB]
+Get:11 http://ports.ubuntu.com/ubuntu-ports focal-updates/restricted arm64 Packages [80.6 kB]
+Get:12 http://ports.ubuntu.com/ubuntu-ports focal-updates/multiverse arm64 Packages [14.7 kB]
+Get:13 http://ports.ubuntu.com/ubuntu-ports focal-backports/main arm64 Packages [54.3 kB]
+Get:14 http://ports.ubuntu.com/ubuntu-ports focal-backports/universe arm64 Packages [27.6 kB]
+Get:15 http://ports.ubuntu.com/ubuntu-ports focal-security/universe arm64 Packages [1207 kB]
+Get:16 http://ports.ubuntu.com/ubuntu-ports focal-security/main arm64 Packages [3382 kB]
+Get:17 http://ports.ubuntu.com/ubuntu-ports focal-security/restricted arm64 Packages [74.9 kB]
+Get:18 http://ports.ubuntu.com/ubuntu-ports focal-security/multiverse arm64 Packages [8028 B]
+Fetched 23.3 MB in 9s (2610 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  binutils-aarch64-linux-gnu binutils-common libbinutils libctf-nobfd0 libctf0
+Suggested packages:
+  binutils-doc
+The following NEW packages will be installed:
+  binutils binutils-aarch64-linux-gnu binutils-common libbinutils
+  libctf-nobfd0 libctf0
+0 upgraded, 6 newly installed, 0 to remove and 5 not upgraded.
+Need to get 2760 kB of archives.
+After this operation, 16.5 MB of additional disk space will be used.
+Get:1 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 binutils-common arm64 2.34-6ubuntu1.11 [208 kB]
+Get:2 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 libbinutils arm64 2.34-6ubuntu1.11 [475 kB]
+Get:3 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 libctf-nobfd0 arm64 2.34-6ubuntu1.11 [44.8 kB]
+Get:4 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 libctf0 arm64 2.34-6ubuntu1.11 [43.2 kB]
+Get:5 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 binutils-aarch64-linux-gnu arm64 2.34-6ubuntu1.11 [1986 kB]
+Get:6 http://ports.ubuntu.com/ubuntu-ports focal-updates/main arm64 binutils arm64 2.34-6ubuntu1.11 [3356 B]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 2760 kB in 0s (6096 kB/s)
+Selecting previously unselected package binutils-common:arm64.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4117 files and directories currently installed.)
+Preparing to unpack .../0-binutils-common_2.34-6ubuntu1.11_arm64.deb ...
+Unpacking binutils-common:arm64 (2.34-6ubuntu1.11) ...
+Selecting previously unselected package libbinutils:arm64.
+Preparing to unpack .../1-libbinutils_2.34-6ubuntu1.11_arm64.deb ...
+Unpacking libbinutils:arm64 (2.34-6ubuntu1.11) ...
+Selecting previously unselected package libctf-nobfd0:arm64.
+Preparing to unpack .../2-libctf-nobfd0_2.34-6ubuntu1.11_arm64.deb ...
+Unpacking libctf-nobfd0:arm64 (2.34-6ubuntu1.11) ...
+Selecting previously unselected package libctf0:arm64.
+Preparing to unpack .../3-libctf0_2.34-6ubuntu1.11_arm64.deb ...
+Unpacking libctf0:arm64 (2.34-6ubuntu1.11) ...
+Selecting previously unselected package binutils-aarch64-linux-gnu.
+Preparing to unpack .../4-binutils-aarch64-linux-gnu_2.34-6ubuntu1.11_arm64.deb ...
+Unpacking binutils-aarch64-linux-gnu (2.34-6ubuntu1.11) ...
+Selecting previously unselected package binutils.
+Preparing to unpack .../5-binutils_2.34-6ubuntu1.11_arm64.deb ...
+Unpacking binutils (2.34-6ubuntu1.11) ...
+Setting up binutils-common:arm64 (2.34-6ubuntu1.11) ...
+Setting up libctf-nobfd0:arm64 (2.34-6ubuntu1.11) ...
+Setting up libbinutils:arm64 (2.34-6ubuntu1.11) ...
+Setting up libctf0:arm64 (2.34-6ubuntu1.11) ...
+Setting up binutils-aarch64-linux-gnu (2.34-6ubuntu1.11) ...
+Setting up binutils (2.34-6ubuntu1.11) ...
+Processing triggers for libc-bin (2.31-0ubuntu9.17) ...
