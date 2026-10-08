@@ -299,7 +299,8 @@ build_scrcpy_from_source() {
             || die "SDL3 下载失败：$sdlurl"
         rm -rf "$VENDOR_DIR/sdl3-src" "$VENDOR_DIR/sdl3-build"
         mkdir -p "$VENDOR_DIR/sdl3-src"
-        tar -xf "$VENDOR_DIR/sdl3.tar.gz"       # -xf 让 tar 自己识别（gz/xz 都行） -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
+        # 用 -xf 让 tar 自己识别压缩格式（gz/xz 都行）
+        tar -xf "$VENDOR_DIR/sdl3.tar.gz" -C "$VENDOR_DIR/sdl3-src" --strip-components=1 \
             || die "SDL3 解压失败"
         # 第一次按完整依赖配置；失败时打印错误摘要，再用最小依赖重试一次
         # （关掉 XTEST / ALSA 这些可选后端），避免因为一个可选依赖整轮白跑。
