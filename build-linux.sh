@@ -1181,42 +1181,49 @@ if [ "$ONEDIR" -eq 1 ]; then
     info "  目录里最大的 20 个项目："
     du -ah "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | sort -rh | sed -n '1,20p' | sed 's/^/      /' || true
     info "  合计：$(du -sh "$DIST_DIR/$ARTIFACT_NAME" 2>/dev/null | cut -f1)"
-    # ---- 注意：这里**不再**做"删除未被引用的库"的自动裁剪 ----
-    # 曾经做过一次（用 ldd 判断谁引用了谁），结果删掉了 libcrypto.so.1.1：
-    #   · 判断时只扫了 _internal/*.cpython-*.so（顶层），而 Python 扩展模块在
-    #     _internal/python3.x/lib-dynload/ 子目录里 → libcrypto/libssl 被误删
-    #   · 构建机的 --selftest 通过，是因为构建容器自带 libcrypto.so.1.1，
-    #     系统库掩盖了问题；用户在 Ubuntu 22 上直接 ImportError 起不来
-    # 结论：省那 3MB 完全不值得冒"用户装不上"的风险。真要减体积，
-    # 就用**裁剪前**的体积报告去改构建参数（比如不装用不到的后端），
-    # 而不是事后删文件。
-    if command -v ldd >/dev/null 2>&1; then
-        _root="$DIST_DIR/$ARTIFACT_NAME"
-        _int="$_root/_internal"
-        if [ -d "$_int" ]; then
+    # ---- 依赖覆盖检查（**只做诊断，绝不允许让构建失败**）----
+    # 为什么需要：曾经做过"自动删库"的裁剪，删掉了 libcrypto.so.1.1，
+    # 构建机自带该库所以自检假绿，用户在 Ubuntu 22 上直接 ImportError。
+    # 这里把"解析不到的依赖"和"解析到包外的依赖"列出来，让这类问题现形。
+    #
+    # ⚠️ 整块放在子 shell 里并关掉 set -e / pipefail：
+    #    ldd 对非 ELF 文件会返回非零（曾经因此把 glibc2.28 这轮构建搞失败）。
+    if command -v ldd >/dev/null 2>&1 && [ -d "$DIST_DIR/$ARTIFACT_NAME/_internal" ]; then
+        (
+            set +e
+            set +o pipefail 2>/dev/null || true
+            _root="$DIST_DIR/$ARTIFACT_NAME"
+            _int="$_root/_internal"
+            _all="$(mktemp 2>/dev/null || echo /tmp/lddall.$$)"
             _miss="$(mktemp 2>/dev/null || echo /tmp/miss.$$)"
-            : > "$_miss"
-            # 系统/加载器白名单：这些本来就应该由用户系统提供
-            _sysre='^/(lib|usr/lib|lib64|usr/lib64)/(ld-linux|libc\.|libm\.|libdl\.|libpthread\.|librt\.|libgcc_s\.|libresolv\.|libutil\.|libnsl\.)'
-            find "$_root" -type f \( -name '*.so' -o -name '*.so.*' -o -name "$ARTIFACT_NAME" \) 2>/dev/null \
+            _out="$(mktemp 2>/dev/null || echo /tmp/out.$$)"
+            : > "$_all"; : > "$_miss"; : > "$_out"
+
+            # 只跑一遍 ldd：结果落文件，后面纯文本分析（管道里不再有会失败的命令）
+            find "$_root" -type f \( -name '*.so' -o -name '*.so.*' -o -name "$ARTIFACT_NAME" \) \
+                2>/dev/null \
             | while IFS= read -r _elf; do
-                LD_LIBRARY_PATH="$_int:$_int/python3.11:$_int/python3.8:$_int/python3.9:$_int/python3.10:$_int/python3.12${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-                    ldd "$_elf" 2>/dev/null
-            done | sed -n 's/^[[:space:]]*\([^ ]*\) => not found.*/NOTFOUND \1/p' | sort -u >> "$_miss"
-            # 也检查"解析到了包外路径"的依赖（可能依赖构建机的库）
-            _outside="$(find "$_root" -type f -name '*.so*' 2>/dev/null | while IFS= read -r _elf; do
-                LD_LIBRARY_PATH="$_int${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$_elf" 2>/dev/null
-            done | sed -n 's/.*=> \(\/[^ ]*\).*/\1/p' | sort -u | grep -v "^$_int/" || true)"
+                [ -n "$_elf" ] || continue
+                LD_LIBRARY_PATH="$_int:$_int/python3.11:$_int/python3.10:$_int/python3.9:$_int/python3.8:$_int/python3.12${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+                    ldd "$_elf" 2>/dev/null || true
+            done >> "$_all" 2>/dev/null || true
+
+            sed -n 's/^[[:space:]]*\([^ ]*\) => not found.*/\1/p' "$_all" 2>/dev/null | sort -u > "$_miss" 2>/dev/null || true
+            sed -n 's/.*=> \(\/[^ ]*\).*/\1/p' "$_all" 2>/dev/null | sort -u 2>/dev/null \
+                | grep -v "^$_int/" > "$_out" 2>/dev/null || true
+
             if [ -s "$_miss" ]; then
-                warn "以下依赖在包里找不到（用户机器上可能起不来）："
-                sed 's/^/      /' "$_miss"
+                warn "以下依赖在包里**找不到**（用户机器上很可能起不来）："
+                sed 's/^/      /' "$_miss" 2>/dev/null || true
+            else
+                info "  依赖覆盖检查：没有\"解析不到\"的依赖 ✅"
             fi
-            if [ -n "$_outside" ]; then
-                info "  解析到包外的依赖（请确认这些是系统基础库）："
-                printf '%s\n' "$_outside" | sed 's/^/      /'
+            if [ -s "$_out" ]; then
+                info "  解析到包外的依赖（正常情况下应只有 glibc/加载器这类系统库）："
+                sed 's/^/      /' "$_out" 2>/dev/null | sed -n '1,20p' || true
             fi
-            rm -f "$_miss" 2>/dev/null || true
-        fi
+            rm -f "$_all" "$_miss" "$_out" 2>/dev/null || true
+        ) || info "  （依赖覆盖检查自身出错，已跳过；它只是诊断，不影响构建）"
     fi
 
     # ---- 减小体积：PyInstaller 不会 strip，符号表占不少空间 ----
