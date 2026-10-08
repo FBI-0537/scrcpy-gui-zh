@@ -24,7 +24,8 @@ permissions:
 
 jobs:
   cleanup:
-    name: 删除 Release 与标签
+    # 名字里带上触发的标签，避免"看着像要删 Release，其实是别的动作"
+    name: 清理 ${{ github.ref_name }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -41,6 +42,19 @@ jobs:
             target="${{ github.event.inputs.target }}"
           fi
           echo "本次要删除的目标：$target"
+          case "$target" in
+            cancel-stale)
+              echo "本次动作：取消排队/进行中的运行（**不会删除任何 Release**），"
+              echo "          但保留标签当前指向的那一轮正式构建。"
+              ;;
+            all)
+              echo "本次动作：删除所有 Release 与标签（可用 KEEP 环境变量保留若干）。"
+              ;;
+            *)
+              echo "本次动作：删除 Release「$target」及其标签。"
+              echo "          注意：如果之后又移动了同名标签，Release 工作流会把它重新发布出来。"
+              ;;
+          esac
           echo
 
           if [ "$target" = "cancel-stale" ]; then
