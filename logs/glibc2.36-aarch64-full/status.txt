@@ -1,0 +1,4 @@
+label=glibc2.36-aarch64-full
+status=failure
+run=53
+ref=v1.0.0
