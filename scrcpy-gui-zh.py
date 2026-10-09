@@ -754,12 +754,17 @@ def parse_mdns_adb_services(data, src_ip):
             return found
         qd = int.from_bytes(data[4:6], "big")
         an = int.from_bytes(data[6:8], "big")
+        ns = int.from_bytes(data[8:10], "big")
+        ar = int.from_bytes(data[10:12], "big")
         off = 12
         for _ in range(qd):                     # 跳过问题段
             _, off = _mdns_read_name(data, off)
             off += 4
         kind, port = "", 0
-        for _ in range(an):                     # 遍历回答段
+        # ⚠️ 必须遍历 an + ns + ar：真实 Android 的 mDNS 通常把 PTR 放在回答段，
+        # 而把 **SRV/A 放在附加段（ARCOUNT）** —— 只看回答段会抓不到端口
+        # （用户实测就是这样：明明收到了 _adb-tls-pairing 广播却解析不出地址）。
+        for _ in range(an + ns + ar):
             name, off = _mdns_read_name(data, off)
             if off + 10 > len(data):
                 break
@@ -3283,7 +3288,8 @@ def selftest():
 
 
 # 低配模式用的一组 scrcpy 参数（界面复选框与命令行 --low-spec 共用）
-LOW_SPEC_ARGS = ["--max-size", "1024", "--max-fps", "30", "--render-driver=software"]
+LOW_SPEC_ARGS = ["--max-size", "1024", "--max-fps", "24",
+                 "--video-bit-rate", "2M", "--render-driver=software"]
 
 CLI_HELP = """scrcpy 手机投屏 · 命令行模式（不启动图形界面，适合低内存设备）
 
