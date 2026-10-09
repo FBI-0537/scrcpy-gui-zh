@@ -713,6 +713,84 @@ def mdns_troubleshooting_lines():
 MDNS_ADDR = "224.0.0.251"
 
 
+def _mdns_read_name(data, off):
+    """读取一个 DNS 名字（处理压缩指针），返回 (名字, 新偏移)。"""
+    parts, jumps = [], 0
+    n = len(data)
+    while off < n and jumps < 32:
+        ln = data[off]
+        if ln == 0:
+            off += 1
+            break
+        if ln & 0xC0 == 0xC0:            # 压缩指针
+            if off + 1 >= n:
+                break
+            off = ((ln & 0x3F) << 8) | data[off + 1]
+            jumps += 1
+            continue
+        off += 1
+        chunk = data[off:off + ln]
+        try:
+            parts.append(chunk.decode("utf-8", "replace"))
+        except Exception:
+            parts.append("")
+        off += ln
+    return ".".join(parts), off
+
+
+def parse_mdns_adb_services(data, src_ip):
+    """解析一段 mDNS 报文，返回 [(kind, ip, port)]，kind 为 pairing / connect。
+
+    ADB 无线调试会广播：
+        _adb-tls-pairing._tcp.local   手机停在「使用配对码配对设备」时
+        _adb-tls-connect._tcp.local   无线调试已开启、可连接时
+    端口在 **SRV 记录** 里（DNS 线格式的二进制），所以必须真解析 ——
+    只"挖可打印字符串"只能拿到服务名，拿不到端口。这一步是为了在
+    adb 自带 mDNS 解析器失效时（实测某 ARM 板子就是这样）自己找到地址。
+    """
+    found = []
+    try:
+        if len(data) < 12:
+            return found
+        qd = int.from_bytes(data[4:6], "big")
+        an = int.from_bytes(data[6:8], "big")
+        off = 12
+        for _ in range(qd):                     # 跳过问题段
+            _, off = _mdns_read_name(data, off)
+            off += 4
+        kind, port = "", 0
+        for _ in range(an):                     # 遍历回答段
+            name, off = _mdns_read_name(data, off)
+            if off + 10 > len(data):
+                break
+            rtype = int.from_bytes(data[off:off + 2], "big")
+            rdlen = int.from_bytes(data[off + 8:off + 10], "big")
+            off += 10
+            if off + rdlen > len(data):
+                break
+            rdata = data[off:off + rdlen]
+            low = name.lower()
+            if "tls-pairing" in low:
+                kind = "pairing"
+            elif "tls-connect" in low:
+                kind = "connect"
+            if rtype == 33 and len(rdata) >= 6:          # SRV：端口在第 5-6 字节
+                port = int.from_bytes(rdata[4:6], "big")
+            elif rtype == 12:                            # PTR：也含服务类型
+                target, _ = _mdns_read_name(data, off)
+                tlow = target.lower()
+                if "tls-pairing" in tlow:
+                    kind = "pairing"
+                elif "tls-connect" in tlow:
+                    kind = "connect"
+            off += rdlen
+        if kind and 0 < port < 65536:
+            found.append((kind, src_ip, port))
+    except Exception:
+        pass
+    return found
+
+
 def mdns_network_probe(seconds=15, log=None):
     """直接监听 mDNS 组播，判断组播到底通不通（ping 通不代表组播通）。
 
@@ -721,7 +799,8 @@ def mdns_network_probe(seconds=15, log=None):
     import socket as _socket
     import struct as _struct
 
-    result = {"packets": 0, "sources": set(), "adb_services": [], "error": ""}
+    result = {"packets": 0, "sources": set(), "adb_services": [],
+              "found": [], "error": ""}
     sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM, _socket.IPPROTO_UDP)
     try:
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
@@ -758,6 +837,9 @@ def mdns_network_probe(seconds=15, log=None):
         result["packets"] += 1
         result["sources"].add(addr[0])
         if b"_adb" in data:
+            for item in parse_mdns_adb_services(data, addr[0]):
+                if item not in result["found"]:
+                    result["found"].append(item)
             # 粗解析：把报文里的可打印字符串挖出来找服务名
             names, cur = [], []
             for byte in data:
@@ -2466,11 +2548,17 @@ class ScrcpyGui:
                      % (res["packets"], len(res["sources"])))
             for ip in sorted(res["sources"])[:15]:
                 self.log("     来源 %s" % ip)
+            if res.get("found"):
+                self.log("★ 自己解析出 ADB 地址（可直接用来配对/连接）：")
+                for kind, ip, port in res["found"]:
+                    self.log("     %s → %s:%s"
+                             % ("配对服务" if kind == "pairing" else "连接服务", ip, port))
+                self.log("  （adb 自带的 mDNS 解析器可能看不到，这些地址仍然有效）")
             if res["adb_services"]:
                 self.log("★ 发现 ADB 服务：")
                 for item in res["adb_services"]:
                     self.log("     %s" % item)
-            else:
+            elif not res.get("found"):
                 self.log("没有发现任何 _adb 服务")
 
             if res["packets"] == 0:
@@ -2682,6 +2770,24 @@ class ScrcpyGui:
                 break
             if pairs and not fallback:
                 fallback = pairs[0][2]
+            # adb 自带的 mDNS 解析器在部分机器上失效（实测某 ARM 板子就是这样，
+            # 但网络里确实有广播）。约 40 秒还没结果就用自己的 mDNS 解析兜底。
+            if not pair_addr and poll % 20 == 0:
+                self.log(tag + "adb 的 mDNS 一直没有结果 → 改用程序自己的 mDNS 解析…")
+                try:
+                    res = mdns_network_probe(6)
+                    mine = [x for x in res.get("found", []) if x[0] == "pairing"]
+                    for _kind, ip, port in mine:
+                        pair_addr = "%s:%s" % (ip, port)
+                        self.log(tag + "✅ 自己解析到配对服务：%s" % pair_addr)
+                        break
+                    if not mine:
+                        self.log(tag + "（自己解析也没找到；确认手机停在"
+                                      "「使用配对码配对设备」界面、Wi-Fi 没断）")
+                except Exception as exc:
+                    self.log(tag + "（自己的 mDNS 解析出错：%s）" % exc)
+                if pair_addr:
+                    break
             time.sleep(2)
 
         if not pair_addr and fallback:
@@ -2739,6 +2845,19 @@ class ScrcpyGui:
             if conn:
                 break
             time.sleep(2)
+
+        if not conn:
+            # 同样兜底：自己的 mDNS 解析（adb 的解析器失效时全靠它）
+            self.log("adb 没给出连接地址 → 用程序自己的 mDNS 解析找…")
+            try:
+                res = mdns_network_probe(6)
+                for _kind, ip, port in res.get("found", []):
+                    if _kind == "connect":
+                        conn = "%s:%s" % (ip, port)
+                        self.log("✅ 自己解析到连接服务：%s" % conn)
+                        break
+            except Exception as exc:
+                self.log("（自己的 mDNS 解析出错：%s）" % exc)
 
         if conn:
             ip, _, port = conn.rpartition(":")
