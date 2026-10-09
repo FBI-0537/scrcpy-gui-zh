@@ -1,0 +1,36 @@
+target=cancel-stale
+run=25
+job_status=success
+--- 删除日志（末尾 40 行）---
+=== 取消过期/被取代的运行 ===
+保留的提交（标签 v1.0.0 指向）：69c7c9aceba4983c7c29b9209713e4bbcf1132a9
+
+  跳过 run 37932698063（就是本次清理自己）
+  保留 run 37932618458（v1.0.0 @ 69c7c9a）—— 最新的正式构建
+
+=== 取消后仍在排队/进行中的运行 ===
+37932698063	cleanup-cancel-stale	69c7c9a	Cleanup
+37932618458	v1.0.0	69c7c9a	Release
+--- 剩余 Release ---
+v1.0.0（14 个资产）
+    scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz	20839664
+    scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.txt	3386
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz	59703356
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.txt	4579
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz	58248544
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.txt	4568
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz	23046772
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.txt	3434
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz	78342132
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt	3476
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz	75642048
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.txt	3465
+    scrcpy-gui-zh-1.0.0-windows-x86_64.exe	25402442
+    SHA256SUMS.txt	1442
+--- 剩余标签 ---
+cleanup-cancel-stale
+cleanup-v1.0.0
+cleanup-zzz-list
+inspect-v1.0.0
+repair-v1.0.0
+v1.0.0
