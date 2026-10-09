@@ -738,6 +738,72 @@ def _mdns_read_name(data, off):
     return ".".join(parts), off
 
 
+# 同一时刻只允许一个 mDNS 监听器：Linux 的 SO_REUSEPORT 会把组播包
+# 只投递给其中一个 socket，两个监听器并存时后开的那个收不到任何包
+# （用户实测：兜底解析一直"没找到"，而独立探测却能看到手机）。
+_MDNS_LISTEN_LOCK = threading.Lock()
+
+
+def parse_mdns_adb_parts(data):
+    """解析一段 mDNS 报文，返回 (kinds, ports, pairs)。
+
+    · kinds：本报文里出现的服务类型（PTR 或 SRV 的名字都能给出）
+    · ports：本报文里出现的 SRV 端口
+    · pairs：**同一条 SRV 记录内**得到的 (kind, port) —— 这是可靠的配对
+      （SRV 记录的名字形如 <实例>._adb-tls-pairing._tcp.local，本身含类型）
+
+    为什么要三样都返回：真实 mDNS 常把 PTR（类型）与 SRV（端口）分开报，
+    跨报文只能得到 kind × port 的**全部组合**（含错误组合），所以优先用 pairs，
+    跨报文组合仅作最后兜底。
+    """
+    kinds, ports, pairs = set(), set(), set()
+    try:
+        if len(data) < 12:
+            return kinds, ports, pairs
+        qd = int.from_bytes(data[4:6], "big")
+        an = int.from_bytes(data[6:8], "big")
+        ns = int.from_bytes(data[8:10], "big")
+        ar = int.from_bytes(data[10:12], "big")
+        off = 12
+        for _ in range(qd):
+            _, off = _mdns_read_name(data, off)
+            off += 4
+        for _ in range(an + ns + ar):
+            name, off = _mdns_read_name(data, off)
+            if off + 10 > len(data):
+                break
+            rtype = int.from_bytes(data[off:off + 2], "big")
+            rdlen = int.from_bytes(data[off + 8:off + 10], "big")
+            off += 10
+            if off + rdlen > len(data):
+                break
+            rdata = data[off:off + rdlen]
+            low = name.lower()
+            kind_here = ""
+            if "tls-pairing" in low:
+                kind_here = "pairing"
+            elif "tls-connect" in low:
+                kind_here = "connect"
+            if kind_here:
+                kinds.add(kind_here)
+            if rtype == 33 and len(rdata) >= 6:          # SRV：端口在第 5-6 字节
+                p = int.from_bytes(rdata[4:6], "big")
+                ports.add(p)
+                if kind_here and 0 < p < 65536:
+                    pairs.add((kind_here, p))            # 同一条记录 → 可靠配对
+            elif rtype == 12:                            # PTR：也带服务类型
+                target, _ = _mdns_read_name(data, off)
+                tlow = target.lower()
+                if "tls-pairing" in tlow:
+                    kinds.add("pairing")
+                elif "tls-connect" in tlow:
+                    kinds.add("connect")
+            off += rdlen
+    except Exception:
+        pass
+    return kinds, ports, pairs
+
+
 def parse_mdns_adb_services(data, src_ip):
     """解析一段 mDNS 报文，返回 [(kind, ip, port)]，kind 为 pairing / connect。
 
@@ -804,8 +870,21 @@ def mdns_network_probe(seconds=15, log=None):
     import socket as _socket
     import struct as _struct
 
+    # 同一时刻只允许一个监听器（否则组播包会被 SO_REUSEPORT 分走）
+    if not _MDNS_LISTEN_LOCK.acquire(timeout=2):
+        return {"packets": 0, "sources": set(), "adb_services": [],
+                "found": [], "_kinds": {}, "_ports": {}, "_pairs": {},
+                "error": "另一个 mDNS 监听正在进行，已跳过（避免抢包）"}
+    try:
+        return _mdns_probe_locked(seconds, log, _socket, _struct)
+    finally:
+        _MDNS_LISTEN_LOCK.release()
+
+
+def _mdns_probe_locked(seconds, log, _socket, _struct):
     result = {"packets": 0, "sources": set(), "adb_services": [],
-              "found": [], "error": ""}
+              "found": [], "_kinds": {}, "_ports": {}, "_pairs": {},
+              "error": ""}
     sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM, _socket.IPPROTO_UDP)
     try:
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
@@ -842,6 +921,14 @@ def mdns_network_probe(seconds=15, log=None):
         result["packets"] += 1
         result["sources"].add(addr[0])
         if b"_adb" in data:
+            # 跨报文累积：PTR 给"服务类型"、SRV 给"端口"，两者可能不在同一个包里
+            kinds, ports, pairs = parse_mdns_adb_parts(data)
+            if pairs:
+                result["_pairs"].setdefault(addr[0], set()).update(pairs)
+            if kinds:
+                result["_kinds"].setdefault(addr[0], set()).update(kinds)
+            if ports:
+                result["_ports"].setdefault(addr[0], set()).update(ports)
             for item in parse_mdns_adb_services(data, addr[0]):
                 if item not in result["found"]:
                     result["found"].append(item)
@@ -862,6 +949,23 @@ def mdns_network_probe(seconds=15, log=None):
                     if entry not in result["adb_services"]:
                         result["adb_services"].append(entry)
     sock.close()
+
+    # 优先用"同一条 SRV 记录"给出的可靠配对
+    for ip, prs in result["_pairs"].items():
+        for kind, port in sorted(prs):
+            item = (kind, ip, port)
+            if item not in result["found"]:
+                result["found"].append(item)
+
+    # 兜底：跨报文组合（同一 IP 的"服务类型 × 端口"，可能含错误组合）
+    for ip, kinds in result["_kinds"].items():
+        for port in sorted(result["_ports"].get(ip, ())):
+            if not (0 < port < 65536):
+                continue
+            for kind in sorted(kinds):
+                item = (kind, ip, port)
+                if item not in result["found"]:
+                    result["found"].append(item)
     return result
 
 
