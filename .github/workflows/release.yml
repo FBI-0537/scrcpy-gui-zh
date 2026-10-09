@@ -399,7 +399,6 @@ jobs:
             assets/*.txt
             assets/*.exe
             assets/SHA256SUMS.txt
-          generate_release_notes: true
           fail_on_unmatched_files: false
 
           body: |
@@ -551,7 +550,19 @@ jobs:
             echo "tag=${{ github.ref_name }}"
             echo "--- assets 目录 ---"
             ls -lh "$GITHUB_WORKSPACE/assets" 2>/dev/null || echo "(无 assets 目录)"
-            echo "--- 尝试列出 Release 实际资产 ---"
+            echo "--- 压缩包内容自检（关键文件是否都在）---"
+          cd "$GITHUB_WORKSPACE/assets" 2>/dev/null || cd assets 2>/dev/null || true
+          for f in *.tar.xz; do
+            [ -f "$f" ] || continue
+            echo "  [$f]"
+            tar -tJf "$f" 2>/dev/null \
+              | grep -E '(_internal/(libcrypto|libssl|adb|scrcpy|base_library)|/_internal/[^/]*\.so)' \
+              | sed -n '1,6p' | sed 's/^/      /' || echo "      (无法列出)"
+            n="$(tar -tJf "$f" 2>/dev/null | wc -l)"
+            echo "      条目总数：$n"
+          done
+          echo
+          echo "--- 尝试列出 Release 实际资产 ---"
             GH_TOKEN="${{ github.token }}" gh release view "${{ github.ref_name }}" \
               --json assets --jq '.assets[] | "\(.name)\t\(.size)"' 2>&1 || echo "(列出失败)"
           } > /tmp/plog/info.txt 2>&1
