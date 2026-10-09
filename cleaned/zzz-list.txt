@@ -1,0 +1,64 @@
+target=zzz-list
+run=23
+job_status=success
+--- 删除日志（末尾 40 行）---
+=== ① 找到 Release ID ===
+找到的 Release ID：（没找到）
+
+=== ② 删除 Release（含其资产）===
+没有找到 zzz-list 的 Release（可能已经删掉了）
+
+=== ③ 删除标签 ===
+{"message":"Reference does not exist","documentation_url":"https://docs.github.com/rest/git/refs#delete-a-reference","status":"422"}gh: Reference does not exist (HTTP 422)
+删除标签失败（也可能本来就没有）
+
+=== ④ 核对：该 Release 是否还在 ===
+✅ 已确认 zzz-list 的 Release 不存在了
+
+=== 剩余 Release 列表 ===
+v1.0.0（14 个资产）
+    scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz	20836328
+    scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.txt	3386
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz	59690436
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.txt	4579
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz	58245860
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.txt	4568
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz	23049224
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.txt	3434
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz	78332640
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt	3476
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz	75645748
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.txt	3465
+    scrcpy-gui-zh-1.0.0-windows-x86_64.exe	25398717
+    SHA256SUMS.txt	1547
+
+=== 剩余标签列表 ===
+cleanup-cancel-stale
+cleanup-v1.0.0
+cleanup-zzz-list
+inspect-v1.0.0
+repair-v1.0.0
+v1.0.0
+--- 剩余 Release ---
+v1.0.0（14 个资产）
+    scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz	20836328
+    scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.txt	3386
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz	59690436
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.txt	4579
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz	58245860
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.txt	4568
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz	23049224
+    scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.txt	3434
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz	78332640
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt	3476
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz	75645748
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.txt	3465
+    scrcpy-gui-zh-1.0.0-windows-x86_64.exe	25398717
+    SHA256SUMS.txt	1547
+--- 剩余标签 ---
+cleanup-cancel-stale
+cleanup-v1.0.0
+cleanup-zzz-list
+inspect-v1.0.0
+repair-v1.0.0
+v1.0.0
