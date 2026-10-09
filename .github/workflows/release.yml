@@ -216,9 +216,22 @@ jobs:
             echo "run=${{ github.run_number }}"
             echo "ref=${{ github.ref_name }}"
           } > /tmp/cilog/status.txt
+          # 网络抖动重试：曾经因为 clone/push 一次性超时而丢掉整份日志（run 68）
+          _retry() {
+            _n=0
+            until "$@"; do
+              _n=$((_n + 1))
+              if [ "$_n" -ge 4 ]; then
+                echo "（重试 4 次仍失败：$*）"
+                return 1
+              fi
+              echo "（第 $_n 次失败，${_n}0 秒后重试：$*）"
+              sleep $((_n * 10))
+            done
+          }
           cd /tmp
           rm -rf logs-repo
-          git clone --depth 1 \
+          _retry git clone --depth 1 \
             "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" logs-repo
           cd logs-repo
           mkdir -p "logs/${{ matrix.label }}"
@@ -229,7 +242,7 @@ jobs:
           git add -f "logs/${{ matrix.label }}"
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "CI 日志：${{ matrix.label }}（run ${{ github.run_number }}）" || true
-          git push -f origin "HEAD:ci-log-${{ matrix.label }}-${{ github.run_number }}"
+          _retry git push -f origin "HEAD:ci-log-${{ matrix.label }}-${{ github.run_number }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -324,9 +337,22 @@ jobs:
             echo "run=${{ github.run_number }}"
             echo "ref=${{ github.ref_name }}"
           } > /tmp/cilog/status.txt
+          # 网络抖动重试：曾经因为 clone/push 一次性超时而丢掉整份日志（run 68）
+          _retry() {
+            _n=0
+            until "$@"; do
+              _n=$((_n + 1))
+              if [ "$_n" -ge 4 ]; then
+                echo "（重试 4 次仍失败：$*）"
+                return 1
+              fi
+              echo "（第 $_n 次失败，${_n}0 秒后重试：$*）"
+              sleep $((_n * 10))
+            done
+          }
           cd /tmp
           rm -rf logs-repo
-          git clone --depth 1 \
+          _retry git clone --depth 1 \
             "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" logs-repo
           cd logs-repo
           mkdir -p "logs/windows-x86_64"
@@ -336,7 +362,7 @@ jobs:
           git add -f "logs/windows-x86_64"
           git -c user.email=ci@users.noreply.github.com -c user.name=ci \
             commit -m "CI 日志：windows-x86_64（第 ${{ github.run_number }} 次）" || true
-          git push -f origin "HEAD:ci-log-windows-x86_64-${{ github.run_number }}"
+          _retry git push -f origin "HEAD:ci-log-windows-x86_64-${{ github.run_number }}"
 
       - uses: actions/upload-artifact@v4
         with:
