@@ -1,0 +1,45 @@
+附带文件（不按产物校验，跳过 2 个）：
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz
+    scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt
+
+========================================================================
+文件：scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full
+大小：1.9 MB（2043272 字节）
+  格式：ELF   架构：aarch64（64 位）
+  [OK]   架构与文件名一致（aarch64）
+  形态：目录版（--onedir，解压即用）
+  [OK]   目录版结构完整（_internal=有, PYZ=无, base_library=有）
+  [OK]   目录内含 scrcpy
+  [OK]   目录内含 adb
+  [OK]   目录内含 scrcpy-server
+  [OK]   目录内含 udev 安装脚本
+  [OK]   依赖库 234 个（依赖收集生效）
+  目录内库/可执行文件清单（234 个，最多列 24 个）：
+        _bz2.cpython-311-aarch64-linux-gnu.so
+        _codecs_cn.cpython-311-aarch64-linux-gnu.so
+        _codecs_hk.cpython-311-aarch64-linux-gnu.so
+        _codecs_iso2022.cpython-311-aarch64-linux-gnu.so
+        _codecs_jp.cpython-311-aarch64-linux-gnu.so
+        _codecs_kr.cpython-311-aarch64-linux-gnu.so
+        _codecs_tw.cpython-311-aarch64-linux-gnu.so
+        _contextvars.cpython-311-aarch64-linux-gnu.so
+        _ctypes.cpython-311-aarch64-linux-gnu.so
+        _decimal.cpython-311-aarch64-linux-gnu.so
+        _hashlib.cpython-311-aarch64-linux-gnu.so
+        _lzma.cpython-311-aarch64-linux-gnu.so
+        _multibytecodec.cpython-311-aarch64-linux-gnu.so
+        _queue.cpython-311-aarch64-linux-gnu.so
+        _ssl.cpython-311-aarch64-linux-gnu.so
+        _tkinter.cpython-311-aarch64-linux-gnu.so
+        _typing.cpython-311-aarch64-linux-gnu.so
+        libBLT.2.5.so.8.6
+        libFLAC.so.12
+        libOpenCL.so.1
+        libSDL2-2.0.so.0
+        libSDL3.so.0
+        libSvtAv1Enc.so.1
+        libX11-xcb.so.1
+  可执行文件：scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full
+  结论：通过
+========================================================================
+汇总：1 个产物，1 个通过，0 个不通过（另有 2 个附带文件已跳过）
