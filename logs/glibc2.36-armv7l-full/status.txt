@@ -1,0 +1,4 @@
+label=glibc2.36-armv7l-full
+status=success
+run=69
+ref=v1.0.0
