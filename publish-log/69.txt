@@ -1,0 +1,90 @@
+job_status=success
+run=69
+tag=v1.0.0
+--- assets 目录 ---
+total 326M
+-rw-r--r-- 1 runner runner 1.6K Oct  9 06:33 SHA256SUMS.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full
+-rw-r--r-- 1 runner runner  20M Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz
+-rw-r--r-- 1 runner runner 3.4K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic
+-rw-r--r-- 1 runner runner  57M Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz
+-rw-r--r-- 1 runner runner 4.5K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic
+-rw-r--r-- 1 runner runner  56M Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz
+-rw-r--r-- 1 runner runner 4.5K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full
+-rw-r--r-- 1 runner runner  22M Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz
+-rw-r--r-- 1 runner runner 3.4K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full
+-rw-r--r-- 1 runner runner  75M Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz
+-rw-r--r-- 1 runner runner 3.4K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt
+drwxr-xr-x 3 runner runner 4.0K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full
+-rw-r--r-- 1 runner runner  73M Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz
+-rw-r--r-- 1 runner runner 3.4K Oct  9 06:33 scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.txt
+-rw-r--r-- 1 runner runner  25M Oct  9 06:33 scrcpy-gui-zh-1.0.0-windows-x86_64.exe
+--- 压缩包内容自检（关键文件是否都在）---
+  [scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz]
+      scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full/_internal/libstdc++.so.6
+      scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full/_internal/libavcodec.so.60
+      scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full/_internal/libexpat.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full/_internal/libbrotlienc.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full/_internal/libuuid.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full/_internal/libavfilter.so.9
+      条目总数：423
+  [scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz]
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic/_internal/libavc1394.so.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic/_internal/libunistring.so.2
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic/_internal/libtheoraenc.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic/_internal/libstdc++.so.6
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic/_internal/libpython3.8.so.1.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic/_internal/libiec61883.so.0
+      条目总数：546
+  [scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz]
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic/_internal/libavc1394.so.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic/_internal/libunistring.so.2
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic/_internal/libtheoraenc.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic/_internal/libstdc++.so.6
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic/_internal/libpython3.8.so.1.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic/_internal/libiec61883.so.0
+      条目总数：545
+  [scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz]
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full/_internal/libpython3.8.so.1.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full/_internal/libdbus-1.so.3
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full/_internal/libavcodec.so.60
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full/_internal/libexpat.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full/_internal/libvorbisenc.so.2
+      scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full/_internal/libuuid.so.1
+      条目总数：423
+  [scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz]
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full/_internal/libavc1394.so.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full/_internal/libunistring.so.2
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full/_internal/libtheoraenc.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full/_internal/libstdc++.so.6
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full/_internal/libiec61883.so.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full/_internal/libcjson.so.1
+      条目总数：572
+  [scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz]
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full/_internal/libavc1394.so.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full/_internal/libunistring.so.2
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full/_internal/libtheoraenc.so.1
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full/_internal/libstdc++.so.6
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full/_internal/libiec61883.so.0
+      scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full/_internal/libcjson.so.1
+      条目总数：571
+
+--- 尝试列出 Release 实际资产 ---
+scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.tar.xz	20838968
+scrcpy-gui-zh-1.0.0-linux-glibc2.28-x86_64-full.txt	3386
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.tar.xz	59723324
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-aarch64-basic.txt	4579
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.tar.xz	58242116
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-armv7l-basic.txt	4568
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.tar.xz	23038668
+scrcpy-gui-zh-1.0.0-linux-glibc2.31-x86_64-full.txt	3434
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.tar.xz	78337268
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-aarch64-full.txt	3476
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.tar.xz	75652244
+scrcpy-gui-zh-1.0.0-linux-glibc2.36-armv7l-full.txt	3465
+scrcpy-gui-zh-1.0.0-windows-x86_64.exe	25402526
+SHA256SUMS.txt	1547
