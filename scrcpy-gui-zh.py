@@ -2739,6 +2739,9 @@ class ScrcpyGui:
         self._qr_attempt = getattr(self, "_qr_attempt", 0) + 1
         attempt = self._qr_attempt
 
+        # 每次重新生成二维码都允许再自动试一次备用 mDNS 后端
+        self._mdns_env_tried = False
+
         self.log("请用手机：设置 → 开发者选项 → 无线调试 → 使用二维码配对设备 → 扫码")
         hint = hotspot_subnet_hint()
         if hint:
@@ -2775,6 +2778,26 @@ class ScrcpyGui:
                 break
             if pairs and not fallback:
                 fallback = pairs[0][2]
+            # 约 20 秒还没结果：先自动试官方开关 —— 用 ADB_MDNS_OPENSCREEN=1
+            # 重启 adb 服务（这是 Android platform-tools 文档里的排查建议，
+            # 在部分系统上 adb 自带的 mDNS 需要它才能工作）。
+            # 为什么自动做：以前这只是个按钮，用户不点就永远不会试。
+            if (poll == 10 and not pair_addr
+                    and not getattr(self, "_mdns_env_tried", False)):
+                self._mdns_env_tried = True
+                self.log(tag + "试试官方开关：ADB_MDNS_OPENSCREEN=1 + 重启 adb 服务…")
+                try:
+                    env = child_env()
+                    env["ADB_MDNS_OPENSCREEN"] = "1"
+                    run_system([ADB, "kill-server"], timeout=20)
+                    import subprocess as _sp
+                    _sp.Popen([ADB, "start-server"], env=env,
+                              stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                    time.sleep(3)
+                    self.log(tag + "已用备用 mDNS 后端重启 adb 服务，继续等待…")
+                except Exception as exc:
+                    self.log(tag + "（重启 adb 服务失败：%s）" % exc)
+
             # adb 自带的 mDNS 解析器在部分机器上失效（实测某 ARM 板子就是这样，
             # 但网络里确实有广播）。约 40 秒还没结果就用自己的 mDNS 解析兜底。
             if not pair_addr and poll % 20 == 0:
