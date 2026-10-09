@@ -778,23 +778,66 @@ def mdns_network_probe(seconds=15, log=None):
     return result
 
 
+def device_network_ips():
+    """从 adb 已知设备里取出网络设备的 IP（serial 形如 ip:端口）。"""
+    ips = []
+    try:
+        for serial, _state, _model in adb_devices():
+            if ":" in serial:
+                ip = serial.rsplit(":", 1)[0]
+                if ip and ip not in ips:
+                    ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
+
 def network_context_lines():
-    """打印网络环境，帮助判断组播为什么不通。"""
+    """打印网络环境，帮助判断组播为什么不通。
+
+    这里必须用**真实数据**判断，不能写死结论 —— 曾经写死过一句
+    "本机 192.168.x/24 而手机 10.x → 基本可确定是 NAT 网络"，
+    结果无论手机在哪都这么报，把人往错方向带（用户实测踩到）。
+    """
     lines = []
     vm = in_virtual_machine()
     lines.append("虚拟机      ：%s" % (vm or "未检测到（疑似物理机）"))
     if IS_WIN:
         return lines
+
     _rc, out = run(["ip", "-4", "route", "show", "default"], timeout=10)
     for line in out.splitlines():
         if line.strip():
             lines.append("默认路由    ：%s" % line.strip())
+
+    local_nets = []
     _rc, out = run(["ip", "-4", "addr", "show"], timeout=10)
     for line in out.splitlines():
         text = line.strip()
         if text.startswith("inet "):
-            lines.append("本机地址    ：%s" % text.split()[1])
-    lines.append("判断依据    ：本机 192.168.x/24 而手机 10.x → 基本可确定是 NAT 网络")
+            cidr = text.split()[1]
+            lines.append("本机地址    ：%s" % cidr)
+            ip = cidr.split("/")[0]
+            if not ip.startswith("127.") and ip.count(".") == 3:
+                local_nets.append(ip.rsplit(".", 1)[0] + ".")
+
+    phone_ips = device_network_ips()
+    if phone_ips:
+        lines.append("手机地址    ：%s" % "、".join(phone_ips))
+
+    same = [ip for ip in phone_ips if (ip.rsplit(".", 1)[0] + ".") in local_nets]
+    diff = [ip for ip in phone_ips if ip not in same]
+    if same and not diff:
+        lines.append("判断        ：手机与本机**在同一网段**（%s）→ 组播还不通，"
+                     "基本可以确定是热点/路由器过滤了 mDNS" % "、".join(same))
+        lines.append("            → 换普通路由器 Wi-Fi 试二维码；不换网络就用「方式二：配对码」")
+    elif diff:
+        lines.append("判断        ：手机 %s 与本机**不在同一网段** → 先解决网络："
+                     "让两者连同一个路由器 Wi-Fi（NAT/热点下 mDNS 和直连都不通）"
+                     % "、".join(diff))
+    else:
+        lines.append("判断        ：暂时拿不到手机地址（还没成功连接过）→ "
+                     "先保证两者连同一个路由器 Wi-Fi，再用「方式二：配对码」")
     return lines
 
 
