@@ -2448,6 +2448,22 @@ class ScrcpyGui:
             rel = rel.strip()
             if rel.isdigit():
                 self.log("手机系统版本：Android %s" % rel)
+            else:
+                # 取不到 Android 版本号 → 目标多半不是安卓。
+                # 先说清楚原因，免得用户等到最后才看到：
+                #   /bin/bash: app_process: command not found
+                # 用户实测：被控端是 Ubuntu 20.04 开发板，之前只提示"设备连接中断"，
+                # 完全指错了方向。
+                self.log("！ 取不到 Android 版本号 —— 目标很可能**不是安卓设备**。")
+                self.log("   scrcpy 往设备推的是一个安卓应用（scrcpy-server），")
+                self.log("   并用**安卓专有的 app_process** 启动它；")
+                self.log("   Linux / Ubuntu 板子（如立创泰山派）上没有它，必然失败。")
+                self.log("   → 要投屏 Linux 桌面请改用：")
+                self.log("       VNC：板子上 sudo apt install x11vnc")
+                self.log("             x11vnc -display :0 -forever -passwd 你的密码")
+                self.log("       RDP：板子上 sudo apt install xrdp，Windows 用「远程桌面连接」")
+                self.log("   如果你确定它是安卓（只是 getprop 被 ROM 限制），")
+                self.log("   那就继续尝试 —— 失败时也会给出同样的解释。")
 
         self.log("$ " + " ".join(shlex.quote(c) for c in cmd))
         self.log("─" * 52)
@@ -2486,6 +2502,28 @@ class ScrcpyGui:
     def _explain_scrcpy_failure(self, output):
         """把常见的"环境问题"翻译成能直接照做的中文提示。"""
         low = output.lower()
+        # ⓪ 目标根本不是安卓设备（Linux 开发板等）—— 必须最先判断。
+        # 为什么最先：Linux 上会报 "/bin/bash: app_process: command not found"，
+        # 里面的 "not found" 会误触发下面的"设备掉线"分支，给出误导提示
+        # （用户实测：被控端是 Ubuntu 20.04 开发板，却提示"请确认手机还插着"）。
+        if ("app_process" in low and "not found" in low) or \
+           ("server connection failed" in low and "app_process" in low):
+            self.log("")
+            self.log("！ 目标设备**不是安卓系统** —— scrcpy 无法投屏它。")
+            self.log("   原理：scrcpy 往设备推的是一个**安卓应用**（scrcpy-server），")
+            self.log("        并用**安卓专有的 app_process** 去启动它；")
+            self.log("        Linux / Ubuntu 板子上没有 app_process，所以必然失败。")
+            self.log("   证据：日志里的 「app_process: command not found」。")
+            self.log("   → 要投屏 Linux 桌面，请改用这些方案：")
+            self.log("       · VNC：板子上 sudo apt install x11vnc")
+            self.log("              x11vnc -display :0 -forever -passwd 你的密码")
+            self.log("              然后 Windows 上用 TigerVNC / RealVNC 连 板子IP:5900")
+            self.log("       · RDP：板子上 sudo apt install xrdp")
+            self.log("              然后 Windows 用「远程桌面连接」连 板子IP")
+            self.log("       · 只转发单个窗口：xpra")
+            self.log("   注意：若设备显示成 Nexus_4 之类，那只是板子 adbd 报的默认型号，")
+            self.log("        并不代表它是安卓。")
+            return
         # ① 缺 OpenGL / Mesa 驱动（虚拟机最常见）
         gl_hit = (
             "mesa-loader" in low
