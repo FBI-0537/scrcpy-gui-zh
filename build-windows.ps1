@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     手机投屏 (scrcpy 中文 GUI) —— Windows 构建脚本
 
@@ -146,10 +146,18 @@ function Get-ScrcpyWin64 {
         Write-Info2 "使用指定版本 v$Version"
     } else {
         Write-Info2 '查询 scrcpy 最新版本…'
+        # 带上 token：GitHub 对**未认证**的 API 调用只给 60 次/小时，而 CI runner
+        # 是共享 IP —— 实测 2026-10-16 连续两次被 403 限流，导致 scrcpy 没被捆进
+        # exe（只有 13.5MB 而不是 ~25MB），验收脚本因此拒收。
+        # 在 GitHub Actions 里 GITHUB_TOKEN 本来就在环境变量里，带上就是 5000 次/小时。
+        $headers = @{ 'User-Agent' = 'scrcpy-gui-zh-build' }
+        $token = $env:GITHUB_TOKEN
+        if (-not $token) { $token = $env:GH_TOKEN }
+        if ($token) { $headers['Authorization'] = "Bearer $token" }
         try {
             $rel = Invoke-RestMethod -TimeoutSec 25 `
                 -Uri 'https://api.github.com/repos/Genymobile/scrcpy/releases/latest' `
-                -Headers @{ 'User-Agent' = 'scrcpy-gui-zh-build' }
+                -Headers $headers
             $asset = $rel.assets | Where-Object { $_.name -like 'scrcpy-win64-*.zip' } |
                      Select-Object -First 1
             if ($asset) {
@@ -158,6 +166,28 @@ function Get-ScrcpyWin64 {
             }
         } catch {
             Write-Warn2 "查询最新版本失败：$($_.Exception.Message)"
+        }
+
+        # 兜底：走网页的 releases/latest 重定向拿版本号。
+        # 这条路径**不受 API 限流影响**，所以即使 API 被 403 也能拿到地址。
+        if (-not $url) {
+            Write-Info2 '改用 releases/latest 网页重定向查版本（不受 API 限流影响）…'
+            try {
+                $null = Invoke-WebRequest -TimeoutSec 25 -MaximumRedirection 0 `
+                    -Uri 'https://github.com/Genymobile/scrcpy/releases/latest' `
+                    -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0' } -ErrorAction Stop
+            } catch {
+                $loc = ''
+                try { $loc = $_.Exception.Response.Headers['Location'] } catch { $loc = '' }
+                if (-not $loc) { $loc = "$($_.Exception.Message)" }
+                if ($loc -match '/tag/(v[0-9][^/"?]*)') {
+                    $tag = $Matches[1]
+                    $url = "https://github.com/Genymobile/scrcpy/releases/download/$tag/scrcpy-win64-$tag.zip"
+                    Write-Info2 "网页重定向得到版本：$tag"
+                } else {
+                    Write-Warn2 "网页重定向也没拿到版本号（$loc）"
+                }
+            }
         }
     }
 
